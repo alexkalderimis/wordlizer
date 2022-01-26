@@ -1,13 +1,29 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 module Types where
 
+import Data.Char
+
 import RIO
 import RIO.Process
 
+data Guess = Guess
+  { correct :: !(Set (Int, Char))
+  , misplaced :: !(Set (Int, Char))
+  , wrong :: !(Set Char)
+  } deriving (Show, Eq)
+
+instance Semigroup Guess where
+  a <> b = Guess { correct = correct a <> correct b
+                 , misplaced = misplaced a <> misplaced b
+                 , wrong = wrong a <> wrong b
+                 }
+
+instance Monoid Guess where
+  mempty = Guess mempty mempty mempty
+
 -- | Command line arguments
 data Options = Options
-  { known :: ![(Int, Char)]
-  , mustNotHave :: ![Char]
+  { guesses :: !Guess
   , wordListFile :: !FilePath
   , optionsVerbose :: !Bool
   , optionsMaxCandidates :: !Int
@@ -15,8 +31,7 @@ data Options = Options
 
 defaultOptions :: Options
 defaultOptions = Options
-  { known = []
-  , mustNotHave = []
+  { guesses = mempty
   , wordListFile = "/usr/share/dict/words"
   , optionsVerbose = False
   , optionsMaxCandidates = 100

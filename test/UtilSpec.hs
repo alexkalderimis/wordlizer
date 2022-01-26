@@ -1,5 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedLists #-}
 module UtilSpec (spec) where
 
 import Import
@@ -12,6 +13,34 @@ spec :: Spec
 spec = do
   let db = ["weary", "eager", "panic", "saves", "waves", "woman"]
 
+  describe "parseGuess" $ do
+    it "parses [wrong]" $ do
+      parseGuess "[wrong]" `shouldBe` Right (Guess [] [] ['w', 'r', 'o', 'n', 'g'])
+
+    it "parses [wron]k" $ do
+      parseGuess "[wron]k" `shouldBe` Right (Guess [] [(4, 'k')] ['w', 'r', 'o', 'n'])
+
+    it "parses RIGHT" $ do
+      parseGuess "RIGHT" `shouldBe` Right (Guess [(0, 'r'), (1, 'i'), (2, 'g'), (3, 'h'), (4, 't')] [] [])
+
+    it "parses aCTor" $ do
+      parseGuess "aCTor" `shouldBe` Right (Guess [(1, 'c'), (2, 't')] [(0, 'a'), (3, 'o'), (4, 'r')] [])
+
+    it "parses [p]An[i]c" $ do
+      parseGuess "[p]An[i]c" `shouldBe` Right (Guess [(1, 'a')] [(2, 'n'), (4, 'c')] ['p', 'i'])
+
+    it "rejects bug" $ do
+      parseGuess "bug" `shouldBe` Left "Expected exactly 5 characters. Got: 3"
+
+    it "rejects wordle" $ do
+      parseGuess "wordle" `shouldBe` Left "Maximum 5 characters expected"
+
+    it "rejects wor?k" $ do
+      parseGuess "wor?k" `shouldBe` Left "Cannot parse: ?k"
+
+    it "rejects [wibble]" $ do
+      parseGuess "[wibble]" `shouldBe` Left "Too many bad characters."
+
   describe "wordles" $ do
     it "limits the word list to possible solutions" $ do
       let wordList = T.unlines (db <> ["wooden", "won't", "", "William", "wave", "~~--~"])
@@ -19,40 +48,40 @@ spec = do
       wordles wordList `shouldMatchList` db
 
   describe "restrict" $ do
-    let shouldFind opts expected = filter (restrict opts) db `shouldMatchList` expected
+    let shouldFind g expected = filter (restrict g) db `shouldMatchList` expected
 
     context "we know it starts with W" $ do
-      let query = defaultOptions { known = [(0, 'W')] }
+      let query = mempty { correct = [(0, 'w')] }
 
       it "finds weary, woman" $ do
         query `shouldFind` ["weary", "waves", "woman"]
 
     context "we know it starts with W and ends with N" $ do
-      let query = defaultOptions { known = [(0, 'W'), (4, 'N')] }
+      let query = mempty { correct = [(0, 'w'), (4, 'n')] }
 
       it "finds woman" $ do
         query `shouldFind` ["woman"]
 
     context "we know it contains an e, but not at the end" $ do
-      let query = defaultOptions { known = [(4, 'e')] }
+      let query = mempty { misplaced = [(4, 'e')] }
 
       it "finds weary, eager, saves, waves" $ do
         query `shouldFind` ["weary", "eager", "saves", "waves"]
 
     context "we know it contains an e, not in penultimate position" $ do
-      let query = defaultOptions { known = [(3, 'e')] }
+      let query = mempty { misplaced = [(3, 'e')] }
 
       it "finds weary, eager" $ do
         query `shouldFind` ["weary", "eager"]
 
     context "we know it does not contain any of V G O" $ do
-      let query = defaultOptions { mustNotHave = "vgo" }
+      let query = mempty { wrong = ['v', 'g', 'o'] }
 
       it "finds weary, panic" $ do
         query `shouldFind` ["weary", "panic"]
 
     context "combinations of information" $ do
-      let query = defaultOptions { known = [(0, 'W'), (4, 'e')], mustNotHave = "v" }
+      let query = Guess { correct = [(0, 'w')], misplaced = [(4, 'e')], wrong = ['v'] }
 
       it "finds weary" $ do
         query `shouldFind` ["weary"]

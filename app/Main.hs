@@ -2,7 +2,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Main (main) where
 
-import Data.Char
 import Import
 import Run
 import RIO.Process
@@ -16,8 +15,7 @@ main = do
     "wordlizer - help yourself seem smart"
     "Simple tool to find candidate wordle solutions from /usr/dict/words"
     (Options
-       <$> (mconcat <$> many guess)
-       <*> mustNotHaveChars
+       <$> (mconcat <$> some guess)
        <*> wordsFile
        <*> switch (long "verbose")
        <*> option auto (long "max-candidates"
@@ -39,19 +37,14 @@ main = do
           }
      in runRIO app run
 
+wordsFile :: Parser FilePath
 wordsFile = strOption (long "words"
                     <> metavar "FILE"
                     <> help "File containing word list"
                     <> showDefault
                     <> value "/usr/share/dict/words")
 
-mustNotHaveChars = fmap toLower <$> strOption
-                     (long "not"
-                     <> short 'n'
-                     <> metavar "CHARS"
-                     <> showDefault <> value ""
-                     <> help "Characters that the word must not have")
-
-guess = (zip [0..] >>> filter ((/= '?') . snd))
-        <$> strArgument (metavar "?????"
-                         <> help "Known parts, including A (correct) and a (misplaced) letters, e.g. ?Ab?c")
+guess :: Parser Guess
+guess = argument (eitherReader parseGuess)
+                 (metavar "?????"
+                 <> help "Known parts, including A (correct), a (misplaced), and [a] (wrong) letters, e.g. [p]An[i]c")
