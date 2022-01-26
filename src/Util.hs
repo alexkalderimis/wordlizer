@@ -76,11 +76,11 @@ parseGuess = extract 0
           nots = takeWhile f rst
           rst' = dropWhile f rst
           m = n + length nots
-      in case (m, rst') of
+      in case rst' of
         _ | m > 5 -> Left "Too many bad characters."
-        (_, ']':s) -> do let bad = mempty { wrong = Set.fromList nots }
-                         g <- extract (n + length nots) s
-                         pure (g <> bad)
+        (']':s) -> do let bad = mempty { wrong = Set.fromList nots }
+                      g <- extract (n + length nots) s
+                      pure (g <> bad)
         _ -> Left "Expected ]"
 
     extract _ s = Left ("Cannot parse: " <> s)
