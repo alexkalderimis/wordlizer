@@ -1,15 +1,18 @@
 {-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module Util
   ( restrict
   , wordles
   , parseGuess
+  , bestNextGuesses
   ) where
 
 import RIO
 import Types
 import qualified RIO.Text as T
 import qualified RIO.Set as Set
+import qualified RIO.List as L
 import Data.Char
 
 wordles :: Text -> [Text]
@@ -23,8 +26,38 @@ restrict guess w
   where
      index c = T.findIndex (== c) w
 
+bestNextGuesses :: [Text] -> Maybe (Double, [Text])
+bestNextGuesses ws = (>>= \grp -> L.headMaybe grp >>= \e -> pure (fst e, snd <$> grp))
+                   . L.headMaybe
+                   . L.groupBy (\a b -> fst a == fst b)
+                   . L.sortOn fst
+                   $ fmap (specificity ws &&& id) ws
+
+specificity :: [Text] -> Text -> Double
+specificity ws word = average $ do
+  correct <- ws
+  let g = guessFromWord correct word
+      r = restrict g
+  pure (length (filter r ws))
+  where
+    average xs = realToFrac (sum xs) / realToFrac (length xs)
+
+guessFromWord :: Text -> Text -> Guess
+guessFromWord target guess = Guess { correct, misplaced, wrong }
+  where
+    indexed = zip [0..] (T.unpack guess)
+
+    correct = Set.fromList [ (i, c) | (i, c) <- indexed , T.index target i == c ]
+
+    misplaced = Set.fromList [ (i, c) | (i, c) <- indexed
+                             , maybe False (/= i) (T.findIndex (== c) target)
+                             ]
+
+    wrong = Set.fromList $ filter (\c -> not $ T.isInfixOf (T.singleton c) target) (T.unpack guess)
+
+
 parseGuess :: String -> Either String Guess
-parseGuess s = extract 0 s
+parseGuess = extract 0
   where
     extract 5 [] = pure mempty
     extract n [] = Left ("Expected exactly 5 characters. Got: " <> show n)
