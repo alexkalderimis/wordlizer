@@ -2,6 +2,18 @@
 
 Simple tool to find candidate [wordle](https://www.powerlanguage.co.uk/wordle/) solutions from `/usr/dict/words`
 
+## Example
+
+```
+❯ wordlizer P[e]ac[e]
+packs
+pacts
+panic
+Suggested guesses: (1.0 on average)
+ - packs
+ - pacts
+```
+
 ## Execute
 
 * Run `stack exec -- wordlizer --help` to see the following usage information:
