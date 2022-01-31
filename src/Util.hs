@@ -3,7 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Util
-  ( restrict
+  ( restrict, query
   , wordles
   , parseGuess
   , bestNextGuesses
@@ -29,6 +29,9 @@ restrict guess w
   = all (isCorrect w)   (correct guess) &&
     all (isMisplaced w) (misplaced guess) &&
     all (isWrong w)     (wrong guess)
+
+query :: Guess -> [Text] -> [Text]
+query g = filter (restrict g)
 
 bestNextGuesses :: [Text] -> Maybe (Double, [Text])
 bestNextGuesses ws

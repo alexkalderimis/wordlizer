@@ -11,7 +11,8 @@ import           RIO.List.Partial ((!!))
 -- import           System.IO (hFlush, stdout)
 
 solve :: Guess -> RIO App ()
-solve = withCandidates $ \candidates -> do
+solve g = do
+  candidates <- candidates g
   maxCandidates <- asks (optionsMaxCandidates . appOptions)
   case length candidates of
     0 -> puts "No possible solution"
@@ -23,7 +24,8 @@ solve = withCandidates $ \candidates -> do
             suggest candidates
 
 appraise :: Text -> Guess -> RIO App ()
-appraise w = withCandidates $ \candidates -> do
+appraise w g = do
+  candidates <- candidates g
   let n = length candidates
   puts (tshow n <> " candidates")
   suggest candidates
@@ -51,8 +53,8 @@ play hints = do
                         playRound dict (filter (restrict g) words) (n + 1) t
         _         -> puts "Invalid word!" >> playRound dict words n t
 
-withCandidates :: ([Text] -> RIO App ()) -> Guess -> RIO App ()
-withCandidates f g = do
+candidates :: Guess -> RIO App [Text]
+candidates g = do
   words <- asks appWordList
   v <- asks (optionsVerbose . appOptions)
 
@@ -60,7 +62,7 @@ withCandidates f g = do
 
   when v (asks appOptions >>= puts . tshow)
 
-  f candidates
+  pure candidates
 
 puts = liftIO . IO.putStrLn
 

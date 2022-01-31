@@ -3,8 +3,10 @@
 {-# LANGUAGE OverloadedLists #-}
 module UtilSpec (spec) where
 
-import Import
+import RIO
+import Types
 import Util
+
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import qualified RIO.Text as T
@@ -47,41 +49,41 @@ spec = do
 
       wordles wordList `shouldMatchList` db
 
-  describe "restrict" $ do
-    let shouldFind g expected = filter (restrict g) db `shouldMatchList` expected
+  describe "query" $ do
+    let shouldFind g expected = query g db `shouldMatchList` expected
 
     context "we know it starts with W" $ do
-      let query = mempty { correct = [(0, 'w')] }
+      let guess = mempty { correct = [(0, 'w')] }
 
       it "finds weary, woman" $ do
-        query `shouldFind` ["weary", "waves", "woman"]
+        guess `shouldFind` ["weary", "waves", "woman"]
 
     context "we know it starts with W and ends with N" $ do
-      let query = mempty { correct = [(0, 'w'), (4, 'n')] }
+      let guess = mempty { correct = [(0, 'w'), (4, 'n')] }
 
       it "finds woman" $ do
-        query `shouldFind` ["woman"]
+        guess `shouldFind` ["woman"]
 
     context "we know it contains an e, but not at the end" $ do
-      let query = mempty { misplaced = [(4, 'e')] }
+      let guess = mempty { misplaced = [(4, 'e')] }
 
       it "finds weary, eager, saves, waves" $ do
-        query `shouldFind` ["weary", "eager", "saves", "waves"]
+        guess `shouldFind` ["weary", "eager", "saves", "waves"]
 
     context "we know it contains an e, not in penultimate position" $ do
-      let query = mempty { misplaced = [(3, 'e')] }
+      let guess = mempty { misplaced = [(3, 'e')] }
 
       it "finds weary, eager" $ do
-        query `shouldFind` ["weary", "eager"]
+        guess `shouldFind` ["weary", "eager"]
 
     context "we know it does not contain any of V G O" $ do
-      let query = mempty { wrong = ['v', 'g', 'o'] }
+      let guess = mempty { wrong = ['v', 'g', 'o'] }
 
       it "finds weary, panic" $ do
-        query `shouldFind` ["weary", "panic"]
+        guess `shouldFind` ["weary", "panic"]
 
     context "combinations of information" $ do
-      let query = Guess { correct = [(0, 'w')], misplaced = [(4, 'e')], wrong = ['v'] }
+      let g = Guess { correct = [(0, 'w')], misplaced = [(4, 'e')], wrong = ['v'] }
 
       it "finds weary" $ do
-        query `shouldFind` ["weary"]
+        g `shouldFind` ["weary"]
