@@ -1,45 +1,50 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Util
   ( restrict
   , wordles
   , parseGuess
   , bestNextGuesses
+  , specificity
+  , guessFromWord
+  , displayGuess
   ) where
 
 import RIO
 import Types
 import qualified RIO.Text as T
+import qualified RIO.Text.Partial as T (replace)
 import qualified RIO.Set as Set
 import qualified RIO.List as L
 import Data.Char
+import Control.Parallel.Strategies (using, parListChunk, rdeepseq)
 
 wordles :: Text -> [Text]
 wordles = filter (T.all isAsciiLower) . filter ((== 5) . T.length) . T.lines
 
 restrict :: Guess -> Text -> Bool
 restrict guess w
-  = all (\(i, c) -> T.index w i == c)             (correct guess) &&
-    all (\(i, c) -> maybe False (/= i) (index c)) (misplaced guess) &&
-    all ((== Nothing) . index)                    (wrong guess)
-  where
-     index c = T.findIndex (== c) w
+  = all (isCorrect w)   (correct guess) &&
+    all (isMisplaced w) (misplaced guess) &&
+    all (isWrong w)     (wrong guess)
 
 bestNextGuesses :: [Text] -> Maybe (Double, [Text])
-bestNextGuesses ws = (>>= \grp -> L.headMaybe grp >>= \e -> pure (fst e, snd <$> grp))
-                   . L.headMaybe
-                   . L.groupBy (\a b -> fst a == fst b)
-                   . L.sortOn fst
-                   $ fmap (specificity ws &&& id) ws
+bestNextGuesses ws
+  = bestGuess
+  . L.groupBy (\a b -> fst a == fst b)
+  . L.sortOn fst
+  . (`using` parListChunk 10 rdeepseq)
+  $ fmap (specificity ws &&& id) ws
+
+  where
+    bestGuess grps = L.headMaybe grps >>= \grp -> L.headMaybe grp >>= \h -> pure (fst h, snd <$> grp)
 
 specificity :: [Text] -> Text -> Double
-specificity ws word = average $ do
-  correct <- ws
-  let g = guessFromWord correct word
-      r = restrict g
-  pure (length (filter r ws))
+specificity ws word = average (fmap candidatesGiven ws `using` parListChunk 100 rdeepseq)
   where
+    candidatesGiven correct = let g = guessFromWord correct word in length (filter (restrict g) ws)
     average xs = realToFrac (sum xs) / realToFrac (length xs)
 
 guessFromWord :: Text -> Text -> Guess
@@ -47,14 +52,16 @@ guessFromWord target guess = Guess { correct, misplaced, wrong }
   where
     indexed = zip [0..] (T.unpack guess)
 
-    correct = Set.fromList [ (i, c) | (i, c) <- indexed , T.index target i == c ]
+    correct   = Set.fromList . filter (isCorrect target) $ indexed
+    misplaced = Set.fromList . filter (isMisplaced target) $ indexed
+    wrong     = Set.fromList $ filter (isWrong target) (T.unpack guess)
 
-    misplaced = Set.fromList [ (i, c) | (i, c) <- indexed
-                             , maybe False (/= i) (T.findIndex (== c) target)
-                             ]
-
-    wrong = Set.fromList $ filter (\c -> not $ T.isInfixOf (T.singleton c) target) (T.unpack guess)
-
+displayGuess :: Guess -> Text -> Text
+displayGuess g = T.unpack >>> zipWith f [0..] >>> mconcat >>> T.replace "][" ""
+  where
+    f i c | Set.member (i, c) (correct g) = T.toUpper (T.singleton c)
+    f i c | Set.member (i, c) (misplaced g) = T.singleton c
+    f _ c = "[" <> T.singleton c <> "]"
 
 parseGuess :: String -> Either String Guess
 parseGuess = extract 0
@@ -84,3 +91,10 @@ parseGuess = extract 0
         _ -> Left "Expected ]"
 
     extract _ s = Left ("Cannot parse: " <> s)
+
+isCorrect, isMisplaced :: Text -> (Int, Char) -> Bool
+isCorrect target (i, c) = T.index target i == c
+isMisplaced target (i, c) = maybe False (/= i) (T.findIndex (== c) target)
+
+isWrong :: Text -> Char -> Bool
+isWrong target c = not $ T.isInfixOf (T.singleton c) target

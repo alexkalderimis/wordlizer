@@ -29,6 +29,8 @@ library
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints
   build-depends:
       base >=4.11 && <10
+    , parallel
+    , random
     , rio >=0.1.12.0
     , text
   default-language: Haskell2010
@@ -43,6 +45,8 @@ executable wordlizer
   build-depends:
       base >=4.11 && <10
     , optparse-simple
+    , parallel
+    , random
     , rio >=0.1.12.0
     , text
     , wordlizer
@@ -60,6 +64,8 @@ test-suite wordlizer-test
   build-depends:
       base >=4.11 && <10
     , hspec
+    , parallel
+    , random
     , rio >=0.1.12.0
     , text
     , wordlizer

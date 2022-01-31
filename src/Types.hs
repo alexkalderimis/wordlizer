@@ -23,22 +23,23 @@ instance Monoid Guess where
 
 -- | Command line arguments
 data Options = Options
-  { guesses :: !Guess
-  , wordListFile :: !FilePath
+  { wordListFile :: !FilePath
+  , fullDictFile :: !FilePath
   , optionsVerbose :: !Bool
   , optionsMaxCandidates :: !Int
   } deriving Show
 
 defaultOptions :: Options
 defaultOptions = Options
-  { guesses = mempty
-  , wordListFile = "/usr/share/dict/words"
+  { wordListFile = "/usr/share/dict/words"
+  , fullDictFile = "/usr/share/dict/words"
   , optionsVerbose = False
-  , optionsMaxCandidates = 100
+  , optionsMaxCandidates = 40
   }
 
 data App = App
-  { appWordList :: !Text
+  { appWordList :: ![Text]
+  , appFullDict :: ![Text]
   , appLogFunc :: !LogFunc
   , appProcessContext :: !ProcessContext
   , appOptions :: !Options
