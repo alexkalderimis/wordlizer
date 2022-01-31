@@ -4,8 +4,8 @@ Simple tool to find candidate [wordle](https://www.powerlanguage.co.uk/wordle/) 
 
 ## Example
 
-```
-❯ wordlizer P[e]ac[e]
+```shell
+❯ wordlizer solve P[e]ac[e]
 packs
 pacts
 panic
@@ -16,26 +16,41 @@ Suggested guesses: (1.0 on average)
 
 ## Execute
 
-* Run `stack exec -- wordlizer --help` to see the following usage information:
+* Run `wordlizer --help` to see the following usage information:
 
-```
+```shell
+❯ wordlizer --help
 wordlizer - help yourself seem smart
 
-Usage: wordlizer [--version] [--help] [?????] [-n|--not CHARS] [--words FILE] 
-                 [--verbose] [--max-candidates INT]
+Usage: wordlizer [--version] [--help] [--words FILE] [--dictionary FILE] 
+                 [--verbose] [--max-candidates INT] COMMAND
   Simple tool to find candidate wordle solutions from /usr/dict/words
 
 Available options:
   --version                Show version
   --help                   Show this help text
-  ?????                    Known parts, including A (correct) and a (misplaced)
-                           letters, e.g. ?Ab?c
-  -n,--not CHARS           Characters that the word must not have (default: "")
   --words FILE             File containing word list
                            (default: "/usr/share/dict/words")
-  --max-candidates INT     Maximum number of candidates to show (default: 125)
+  --dictionary FILE        File containing word list
+                           (default: "/usr/share/dict/words")
+  --max-candidates INT     Maximum number of candidates to show (default: 40)
+
+Available commands:
+  solve                    Use guesses to solve the puzzle
+  appraise                 Appraise the quality of a guess
+  play                     Play a game
 ```
 
 ## Run tests
 
-`stack test`
+```shell
+stack test
+```
+
+## Installation
+
+Install to somewhere sensible (e.g. `~/.local/bin`):
+
+```shell
+stack install
+```
