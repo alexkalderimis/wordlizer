@@ -63,7 +63,7 @@ guesses = fmap mconcat
       . many
       $ argument (eitherReader parseGuess)
                  (metavar "?????"
-                 <> help "Known parts, including A (correct), a (misplaced), and [a] (wrong) letters, e.g. [p]An[i]c")
+                 <> help "Known parts, including X (correct), x (misplaced), and [x] (wrong) letters, e.g. [p]An[i]c")
 
 parseOptions :: Parser Options
 parseOptions = Options
