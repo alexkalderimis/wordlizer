@@ -27,8 +27,9 @@ main = do
                   (appraise <$> guess <*> guesses)
        addCommand "play"
                   "Play a game"
-                  play
-                  (switch (long "hints" <> help "Show suggested next moves"))
+                  id
+                  (play <$> switch (long "hints" <> help "Show suggested next moves")
+                        <*> switch (long "auto"  <> help "Play suggested next moves"))
 
   lo <- logOptionsHandle stderr (optionsVerbose options)
   pc <- mkDefaultProcessContext

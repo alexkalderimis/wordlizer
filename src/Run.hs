@@ -7,7 +7,7 @@ import System.Random (randomRIO)
 import qualified Data.Text.IO as IO
 import qualified RIO.Text as T
 import qualified RIO.Set as Set
-import           RIO.List.Partial ((!!))
+import           RIO.List.Partial ((!!), head)
 -- import           System.IO (hFlush, stdout)
 
 solve :: Guess -> RIO App ()
@@ -31,23 +31,26 @@ appraise w g = do
   suggest candidates
   puts ("Average specificity of " <> w <> ": " <> tshow (specificity candidates w))
 
-play :: Bool -> RIO App ()
-play hints = do
+play :: Bool -> Bool -> RIO App ()
+play hints auto = do
   words <- asks appWordList
   dict <- Set.fromList . (words <>) <$> asks appFullDict
   i <- randomRIO (0, length words - 1)
 
   playRound dict words 1 (words !! i)
   where
-    playRound _ [] _ _ = puts "This is awkward! Something went wrong"
-    playRound _ _ n t | n > 6 = puts ("You lost! The answer was: " <> t)
+    playRound _    []    _ _ = puts "This is awkward! Something went wrong"
+    playRound _    _     n t | n > 6 = puts ("You lost! The answer was: " <> t)
+    playRound dict words n t | auto && n > 1, Just (_, best) <- bestNextGuesses words = respondTo dict words n t (head best)
     playRound dict words n t = do
       when hints $ do
         puts (tshow (length words) <> " candidates")
         suggest words
-      w <- prompt
+      prompt >>= respondTo dict words n t
+
+    respondTo dict words n t w = do
       case (w == t, Set.member w dict) of
-        (True, _) -> puts ("You won in " <> tshow n <> "!")
+        (True, _) -> puts (displayGuess (guessFromWord w w) w) >> puts ("You won in " <> tshow n <> "!")
         (_, True) -> do let g = guessFromWord t w
                         puts (displayGuess g w)
                         playRound dict (filter (restrict g) words) (n + 1) t
