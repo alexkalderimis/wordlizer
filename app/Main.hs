@@ -20,11 +20,11 @@ main = do
     do addCommand "solve"
                   "Use guesses to solve the puzzle"
                   solve
-                  guesses
+                  clues
        addCommand "appraise"
                   "Appraise the quality of a guess"
                   id
-                  (appraise <$> guess <*> guesses)
+                  (appraise <$> guess <*> clues)
        addCommand "play"
                   "Play a game"
                   id
@@ -60,8 +60,8 @@ guess = argument (eitherReader $ \s -> if length s == 5 && all isAsciiLower s
                                           else Left "Guesses must be wordles")
                  (metavar "GUESS" <> help "A word to guess")
 
-guesses :: Parser Clue
-guesses = fmap mconcat
+clues :: Parser Clues
+clues = fmap mconcat
       . many
       $ argument (eitherReader parseClue)
                  (metavar "?????"

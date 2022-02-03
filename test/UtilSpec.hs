@@ -10,6 +10,7 @@ import Util
 import qualified Data.Foldable as F
 import Test.Hspec
 import qualified RIO.Text as T
+import qualified RIO.Set as Set
 import qualified RIO.Vector as V
 
 db :: Vector Text
@@ -22,19 +23,19 @@ spec :: Spec
 spec = describe "Util" $ do
   describe "parseClue" $ do
     it "parses [wrong]" $ do
-      parseClue "[wrong]" `shouldBe` Right (Clue [] [] ['w', 'r', 'o', 'n', 'g'])
+      parseClue "[wrong]" `shouldBe` Right (Set.fromList (Wrong <$> ['w', 'r', 'o', 'n', 'g']))
 
     it "parses [wron]k" $ do
-      parseClue "[wron]k" `shouldBe` Right (Clue [] [(4, 'k')] ['w', 'r', 'o', 'n'])
+      parseClue "[wron]k" `shouldBe` Right [Misplaced 4 'k', Wrong 'w', Wrong 'r', Wrong 'o', Wrong 'n']
 
     it "parses RIGHT" $ do
-      parseClue "RIGHT" `shouldBe` Right (Clue [(0, 'r'), (1, 'i'), (2, 'g'), (3, 'h'), (4, 't')] [] [])
+      parseClue "RIGHT" `shouldBe` Right [Correct 0 'r', Correct 1 'i', Correct 2 'g', Correct 3 'h', Correct 4 't']
 
     it "parses aCTor" $ do
-      parseClue "aCTor" `shouldBe` Right (Clue [(1, 'c'), (2, 't')] [(0, 'a'), (3, 'o'), (4, 'r')] [])
+      parseClue "aCTor" `shouldBe` Right [Correct 1 'c', Correct 2 't', Misplaced 0 'a', Misplaced 3 'o', Misplaced 4 'r']
 
     it "parses [p]An[i]c" $ do
-      parseClue "[p]An[i]c" `shouldBe` Right (Clue [(1, 'a')] [(2, 'n'), (4, 'c')] ['p', 'i'])
+      parseClue "[p]An[i]c" `shouldBe` Right [Wrong 'p', Correct 1 'a', Misplaced 2 'n', Wrong 'i', Misplaced 4 'c']
 
     it "rejects bug" $ do
       parseClue "bug" `shouldBe` Left "Expected exactly 5 characters. Got: 3"
@@ -58,37 +59,37 @@ spec = describe "Util" $ do
     let shouldFind g expected = query g db `shouldMatch` (expected :: [Text])
 
     context "we know it starts with W" $ do
-      let guess = mempty { correct = [(0, 'w')] }
+      let guess = [Correct 0 'w']
 
       it "finds weary, woman" $ do
         guess `shouldFind` ["weary", "waves", "woman"]
 
     context "we know it starts with W and ends with N" $ do
-      let guess = mempty { correct = [(0, 'w'), (4, 'n')] }
+      let guess = [Correct 0 'w', Correct 4 'n']
 
       it "finds woman" $ do
         guess `shouldFind` ["woman"]
 
     context "we know it contains an e, but not at the end" $ do
-      let guess = mempty { misplaced = [(4, 'e')] }
+      let guess = [Misplaced 4 'e']
 
       it "finds weary, eager, saves, waves" $ do
         guess `shouldFind` ["weary", "eager", "saves", "waves"]
 
     context "we know it contains an e, not in penultimate position" $ do
-      let guess = mempty { misplaced = [(3, 'e')] }
+      let guess = [Misplaced 3 'e']
 
       it "finds weary, eager" $ do
         guess `shouldFind` ["weary", "eager"]
 
     context "we know it does not contain any of V G O" $ do
-      let guess = mempty { wrong = ['v', 'g', 'o'] }
+      let guess = Set.fromList (Wrong <$> ['v', 'g', 'o'])
 
       it "finds weary, panic" $ do
         guess `shouldFind` ["weary", "panic"]
 
     context "combinations of information" $ do
-      let g = Clue { correct = [(0, 'w')], misplaced = [(4, 'e')], wrong = ['v'] }
+      let g = [Correct 0 'w', Misplaced 4 'e', Wrong 'v']
 
       it "finds weary" $ do
         g `shouldFind` ["weary"]

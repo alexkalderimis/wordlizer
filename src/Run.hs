@@ -12,7 +12,7 @@ import qualified RIO.Set as Set
 import           RIO.List.Partial ((!!), head)
 import           RIO.Vector.Partial ((!))
 
-solve :: Clue -> RIO App ()
+solve :: Clues -> RIO App ()
 solve g = do
   candidates <- candidates g
   maxCandidates <- asks (optionsMaxCandidates . appOptions)
@@ -25,7 +25,7 @@ solve g = do
     _ -> do mapM_ puts candidates
             suggest candidates
 
-appraise :: Text -> Clue -> RIO App ()
+appraise :: Text -> Clues -> RIO App ()
 appraise w g = do
   candidates <- candidates g
   verbosely (puts (tshow (length candidates) <> " candidates"))
@@ -52,13 +52,13 @@ play hints auto firstGuess = do
 
     respondTo dict words n t w = do
       case (w == t, Set.member w dict) of
-        (True, _) -> puts (displayGuess (clueFromWord w w) w) >> puts ("You won in " <> tshow n <> "!")
-        (_, True) -> do let g = clueFromWord t w
+        (True, _) -> puts (displayGuess (cluesFromWord w w) w) >> puts ("You won in " <> tshow n <> "!")
+        (_, True) -> do let g = cluesFromWord t w
                         puts (displayGuess g w)
                         playRound dict (query g words) (n + 1) t
         _         -> puts "Invalid word!" >> playRound dict words n t
 
-candidates :: Clue -> RIO App (Vector Text)
+candidates :: Clues -> RIO App (Vector Text)
 candidates g = do
   verbosely (asks appOptions >>= puts . tshow)
   asks (query g . appWordList)
