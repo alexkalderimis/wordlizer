@@ -6,20 +6,20 @@ import Data.Char
 import RIO
 import RIO.Process
 
-data Guess = Guess
+data Clue = Clue
   { correct :: !(Set (Int, Char))
   , misplaced :: !(Set (Int, Char))
   , wrong :: !(Set Char)
   } deriving (Show, Eq)
 
-instance Semigroup Guess where
-  a <> b = Guess { correct = correct a <> correct b
+instance Semigroup Clue where
+  a <> b = Clue { correct = correct a <> correct b
                  , misplaced = misplaced a <> misplaced b
                  , wrong = wrong a <> wrong b
                  }
 
-instance Monoid Guess where
-  mempty = Guess mempty mempty mempty
+instance Monoid Clue where
+  mempty = Clue mempty mempty mempty
 
 -- | Command line arguments
 data Options = Options

@@ -60,10 +60,10 @@ guess = argument (eitherReader $ \s -> if length s == 5 && all isAsciiLower s
                                           else Left "Guesses must be wordles")
                  (metavar "GUESS" <> help "A word to guess")
 
-guesses :: Parser Guess
+guesses :: Parser Clue
 guesses = fmap mconcat
       . many
-      $ argument (eitherReader parseGuess)
+      $ argument (eitherReader parseClue)
                  (metavar "?????"
                  <> help "Known parts, including X (correct), x (misplaced), and [x] (wrong) letters, e.g. [p]An[i]c")
 

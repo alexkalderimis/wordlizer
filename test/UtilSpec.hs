@@ -20,33 +20,33 @@ shouldMatch xs ys = F.toList xs `shouldMatchList` F.toList ys
 
 spec :: Spec
 spec = describe "Util" $ do
-  describe "parseGuess" $ do
+  describe "parseClue" $ do
     it "parses [wrong]" $ do
-      parseGuess "[wrong]" `shouldBe` Right (Guess [] [] ['w', 'r', 'o', 'n', 'g'])
+      parseClue "[wrong]" `shouldBe` Right (Clue [] [] ['w', 'r', 'o', 'n', 'g'])
 
     it "parses [wron]k" $ do
-      parseGuess "[wron]k" `shouldBe` Right (Guess [] [(4, 'k')] ['w', 'r', 'o', 'n'])
+      parseClue "[wron]k" `shouldBe` Right (Clue [] [(4, 'k')] ['w', 'r', 'o', 'n'])
 
     it "parses RIGHT" $ do
-      parseGuess "RIGHT" `shouldBe` Right (Guess [(0, 'r'), (1, 'i'), (2, 'g'), (3, 'h'), (4, 't')] [] [])
+      parseClue "RIGHT" `shouldBe` Right (Clue [(0, 'r'), (1, 'i'), (2, 'g'), (3, 'h'), (4, 't')] [] [])
 
     it "parses aCTor" $ do
-      parseGuess "aCTor" `shouldBe` Right (Guess [(1, 'c'), (2, 't')] [(0, 'a'), (3, 'o'), (4, 'r')] [])
+      parseClue "aCTor" `shouldBe` Right (Clue [(1, 'c'), (2, 't')] [(0, 'a'), (3, 'o'), (4, 'r')] [])
 
     it "parses [p]An[i]c" $ do
-      parseGuess "[p]An[i]c" `shouldBe` Right (Guess [(1, 'a')] [(2, 'n'), (4, 'c')] ['p', 'i'])
+      parseClue "[p]An[i]c" `shouldBe` Right (Clue [(1, 'a')] [(2, 'n'), (4, 'c')] ['p', 'i'])
 
     it "rejects bug" $ do
-      parseGuess "bug" `shouldBe` Left "Expected exactly 5 characters. Got: 3"
+      parseClue "bug" `shouldBe` Left "Expected exactly 5 characters. Got: 3"
 
     it "rejects wordle" $ do
-      parseGuess "wordle" `shouldBe` Left "Maximum 5 characters expected"
+      parseClue "wordle" `shouldBe` Left "Maximum 5 characters expected"
 
     it "rejects wor?k" $ do
-      parseGuess "wor?k" `shouldBe` Left "Cannot parse: ?k"
+      parseClue "wor?k" `shouldBe` Left "Cannot parse: ?k"
 
     it "rejects [wibble]" $ do
-      parseGuess "[wibble]" `shouldBe` Left "Too many bad characters."
+      parseClue "[wibble]" `shouldBe` Left "Too many bad characters."
 
   describe "wordles" $ do
     it "limits the word list to possible solutions" $ do
@@ -88,7 +88,7 @@ spec = describe "Util" $ do
         guess `shouldFind` ["weary", "panic"]
 
     context "combinations of information" $ do
-      let g = Guess { correct = [(0, 'w')], misplaced = [(4, 'e')], wrong = ['v'] }
+      let g = Clue { correct = [(0, 'w')], misplaced = [(4, 'e')], wrong = ['v'] }
 
       it "finds weary" $ do
         g `shouldFind` ["weary"]

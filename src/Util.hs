@@ -6,10 +6,10 @@
 module Util
   ( restrict, query
   , wordles
-  , parseGuess
+  , parseClue
   , bestNextGuesses
   , specificity
-  , guessFromWord
+  , clueFromWord
   , displayGuess
   ) where
 
@@ -27,13 +27,13 @@ import qualified Control.Foldl as Foldl
 wordles :: Text -> Vector Text
 wordles = V.fromList . filter (T.all isAsciiLower) . filter ((== 5) . T.length) . T.lines
 
-restrict :: Guess -> Text -> Bool
+restrict :: Clue -> Text -> Bool
 restrict guess w
   = all (isCorrect w)   (correct guess) &&
     all (isMisplaced w) (misplaced guess) &&
     all (isWrong w)     (wrong guess)
 
-query :: Guess -> Vector Text -> Vector Text
+query :: Clue -> Vector Text -> Vector Text
 query g = V.filter (restrict g)
 
 bestNextGuesses :: Vector Text -> Maybe (Double, [Text])
@@ -51,11 +51,11 @@ bestNextGuesses ws
 specificity :: Vector Text -> Text -> Double
 specificity ws word = Foldl.fold average (fmap (realToFrac . candidatesGiven) ws `using` parTraversable rdeepseq)
   where
-    candidatesGiven correct = let g = guessFromWord correct word in length (query g ws)
+    candidatesGiven correct = let g = clueFromWord correct word in length (query g ws)
     average = (/) <$> Foldl.sum <*> Foldl.genericLength
 
-guessFromWord :: Text -> Text -> Guess
-guessFromWord target guess = Guess { correct, misplaced, wrong }
+clueFromWord :: Text -> Text -> Clue
+clueFromWord target guess = Clue { correct, misplaced, wrong }
   where
     indexed = zip [0..] (T.unpack guess)
 
@@ -63,15 +63,15 @@ guessFromWord target guess = Guess { correct, misplaced, wrong }
     misplaced = Set.fromList . filter (isMisplaced target) $ indexed
     wrong     = Set.fromList $ filter (isWrong target) (T.unpack guess)
 
-displayGuess :: Guess -> Text -> Text
+displayGuess :: Clue -> Text -> Text
 displayGuess g = T.unpack >>> zipWith f [0..] >>> mconcat >>> T.replace "][" ""
   where
     f i c | Set.member (i, c) (correct g) = T.toUpper (T.singleton c)
     f i c | Set.member (i, c) (misplaced g) = T.singleton c
     f _ c = "[" <> T.singleton c <> "]"
 
-parseGuess :: String -> Either String Guess
-parseGuess = extract 0
+parseClue :: String -> Either String Clue
+parseClue = extract 0
   where
     extract 5 [] = pure mempty
     extract n [] = Left ("Expected exactly 5 characters. Got: " <> show n)
