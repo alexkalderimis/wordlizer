@@ -7,14 +7,19 @@ import RIO
 import Types
 import Util
 
+import qualified Data.Foldable as F
 import Test.Hspec
-import Test.Hspec.QuickCheck
 import qualified RIO.Text as T
+import qualified RIO.Vector as V
+
+db :: Vector Text
+db = V.fromList ["weary", "eager", "panic", "saves", "waves", "woman"]
+
+shouldMatch :: (Show a, Eq a, Foldable t1, Foldable t2) => t1 a -> t2 a -> Expectation
+shouldMatch xs ys = F.toList xs `shouldMatchList` F.toList ys
 
 spec :: Spec
-spec = do
-  let db = ["weary", "eager", "panic", "saves", "waves", "woman"]
-
+spec = describe "Util" $ do
   describe "parseGuess" $ do
     it "parses [wrong]" $ do
       parseGuess "[wrong]" `shouldBe` Right (Guess [] [] ['w', 'r', 'o', 'n', 'g'])
@@ -45,12 +50,12 @@ spec = do
 
   describe "wordles" $ do
     it "limits the word list to possible solutions" $ do
-      let wordList = T.unlines (db <> ["wooden", "won't", "", "William", "wave", "~~--~"])
+      let wordList = T.unlines (F.toList db <> ["wooden", "won't", "", "William", "wave", "~~--~"])
 
-      wordles wordList `shouldMatchList` db
+      wordles wordList `shouldMatch` db
 
   describe "query" $ do
-    let shouldFind g expected = query g db `shouldMatchList` expected
+    let shouldFind g expected = query g db `shouldMatch` (expected :: [Text])
 
     context "we know it starts with W" $ do
       let guess = mempty { correct = [(0, 'w')] }

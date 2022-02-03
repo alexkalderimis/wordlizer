@@ -1,6 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 
 module Util
   ( restrict, query
@@ -18,11 +19,13 @@ import qualified RIO.Text as T
 import qualified RIO.Text.Partial as T (replace)
 import qualified RIO.Set as Set
 import qualified RIO.List as L
+import qualified RIO.Vector as V
 import Data.Char
-import Control.Parallel.Strategies (using, parListChunk, rdeepseq)
+import Control.Parallel.Strategies (using, parTraversable, rdeepseq)
+import qualified Control.Foldl as Foldl
 
-wordles :: Text -> [Text]
-wordles = filter (T.all isAsciiLower) . filter ((== 5) . T.length) . T.lines
+wordles :: Text -> Vector Text
+wordles = V.fromList . filter (T.all isAsciiLower) . filter ((== 5) . T.length) . T.lines
 
 restrict :: Guess -> Text -> Bool
 restrict guess w
@@ -30,25 +33,26 @@ restrict guess w
     all (isMisplaced w) (misplaced guess) &&
     all (isWrong w)     (wrong guess)
 
-query :: Guess -> [Text] -> [Text]
-query g = filter (restrict g)
+query :: Guess -> Vector Text -> Vector Text
+query g = V.filter (restrict g)
 
-bestNextGuesses :: [Text] -> Maybe (Double, [Text])
+bestNextGuesses :: Vector Text -> Maybe (Double, [Text])
 bestNextGuesses ws
-  = bestGuess
+  = (>>= bestGuess)
+  . L.headMaybe
   . L.groupBy (\a b -> fst a == fst b)
   . L.sortOn fst
-  . (`using` parListChunk 10 rdeepseq)
-  $ fmap (specificity ws &&& id) ws
+  . V.toList
+  $ (fmap (specificity ws &&& id) ws `using` parTraversable rdeepseq)
 
   where
-    bestGuess grps = L.headMaybe grps >>= \grp -> L.headMaybe grp >>= \h -> pure (fst h, snd <$> grp)
+    bestGuess best = (, snd <$> best) . fst <$> L.headMaybe best
 
-specificity :: [Text] -> Text -> Double
-specificity ws word = average (fmap candidatesGiven ws `using` parListChunk 100 rdeepseq)
+specificity :: Vector Text -> Text -> Double
+specificity ws word = Foldl.fold average (fmap (realToFrac . candidatesGiven) ws `using` parTraversable rdeepseq)
   where
-    candidatesGiven correct = let g = guessFromWord correct word in length (filter (restrict g) ws)
-    average xs = realToFrac (sum xs) / realToFrac (length xs)
+    candidatesGiven correct = let g = guessFromWord correct word in length (query g ws)
+    average = (/) <$> Foldl.sum <*> Foldl.genericLength
 
 guessFromWord :: Text -> Text -> Guess
 guessFromWord target guess = Guess { correct, misplaced, wrong }

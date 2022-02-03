@@ -23,6 +23,7 @@ dependencies:
 - text
 - parallel
 - random
+- foldl
 
 ghc-options:
 - -Wall

@@ -38,12 +38,11 @@ defaultOptions = Options
   }
 
 data App = App
-  { appWordList :: ![Text]
-  , appFullDict :: ![Text]
+  { appWordList :: !(Vector Text)
+  , appFullDict :: !(Vector Text)
   , appLogFunc :: !LogFunc
   , appProcessContext :: !ProcessContext
   , appOptions :: !Options
-  -- Add other app-specific configuration information here
   }
 
 instance HasLogFunc App where

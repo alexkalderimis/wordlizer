@@ -29,7 +29,8 @@ main = do
                   "Play a game"
                   id
                   (play <$> switch (long "hints" <> help "Show suggested next moves")
-                        <*> switch (long "auto"  <> help "Play suggested next moves"))
+                        <*> switch (long "auto"  <> help "Play suggested next moves")
+                        <*> optional guess)
 
   lo <- logOptionsHandle stderr (optionsVerbose options)
   pc <- mkDefaultProcessContext
