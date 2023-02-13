@@ -24,6 +24,7 @@ dependencies:
 - parallel
 - random
 - foldl
+- rainbow
 
 ghc-options:
 - -Wall

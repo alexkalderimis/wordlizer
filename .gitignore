@@ -7,3 +7,4 @@ wordlist
 *.aux
 *.hp
 *.ps
+.hspec-failures

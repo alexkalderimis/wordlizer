@@ -9,70 +9,107 @@ import qualified Data.Text.IO as IO
 import qualified RIO.Text as T
 import qualified RIO.Vector as V
 import qualified RIO.Set as Set
-import           RIO.List.Partial ((!!), head)
+import           RIO.List.Partial (head)
 import           RIO.Vector.Partial ((!))
+import qualified Rainbow
+import           Rainbow (fore, green, yellow)
 
-solve :: Clues -> RIO App ()
+type CLI = RIO App
+
+solve :: Knowledge -> CLI ()
 solve g = do
-  candidates <- candidates g
+  possible <- candidates g
   maxCandidates <- asks (optionsMaxCandidates . appOptions)
-  case length candidates of
+  case length possible of
     0 -> puts "No possible solution"
-    1 -> puts ("The answer is: " <> (candidates ! 0))
-    n | n >= maxCandidates -> do puts (tshow (length candidates) <> " candidates:")
+    1 -> puts ("The answer is: " <> unwordle (possible ! 0))
+    n | n >= maxCandidates -> do puts (tshow (length possible) <> " candidates:")
                                  puts "too many candidates to show! (use --max-candidates to allow showing more)"
-                                 when (n < 500) (suggest candidates)
-    _ -> do mapM_ puts candidates
-            suggest candidates
+                                 suggest possible
+    _ -> do mapM_ (puts . unwordle) possible
+            suggest possible
 
-appraise :: Text -> Clues -> RIO App ()
+appraise :: Wordle -> Knowledge -> CLI ()
 appraise w g = do
-  candidates <- candidates g
-  verbosely (puts (tshow (length candidates) <> " candidates"))
-  suggest candidates
-  liftIO (printf "Average specificity of %s: %.1f\n" w (specificity candidates w))
+  possible <- candidates g
+  verbosely (puts (tshow (length possible) <> " candidates"))
+  suggest possible
+  liftIO (printf "Average specificity of %s: %.1f\n" (unwordle w) (specificity possible w))
 
-play :: Bool -> Bool -> Maybe Text -> RIO App ()
-play hints auto firstGuess = do
-  words <- asks appWordList
-  dict <- Set.fromList . V.toList . (words <>) <$> asks appFullDict
-  i <- randomRIO (0, length words - 1)
+play :: Hints -> Bool -> Maybe Answer -> Maybe Wordle -> CLI ()
+play hints auto manswer firstGuess = do
+  wordList <- asks appWordList
+  dict <- Set.fromList . (maybeToList firstGuess <>) . V.toList . (wordList <>) <$> asks appFullDict
+  target <- case manswer of
+              Nothing -> Answer <$> randomWordle wordList
+              Just t -> pure t
+  let ws = V.fromList . Set.toList . Set.fromList $ V.toList (pure (getAnswer target) <> wordList)
 
-  playRound dict words 1 (words ! i)
+  playRound dict ws [] target
   where
-    playRound _    ws    _ _ | V.null ws = puts "This is awkward! Something went wrong"
-    playRound _    _     n t | n > 6 = puts ("You lost! The answer was: " <> t)
-    playRound dict words n t | auto && n > 1, Just (_, best) <- bestNextGuesses words = respondTo dict words n t (head best)
-    playRound dict words n t | n == 1, Just guess <- firstGuess = respondTo dict words n t guess
-    playRound dict words n t = do
-      when hints $ do
-        puts (tshow (length words) <> " candidates")
-        suggest words
-      prompt >>= respondTo dict words n t
+    playRound :: Set Wordle -> Vector Wordle -> [Wordle] -> Answer -> CLI ()
+    playRound _    ws _ _  | V.null ws = puts "This is awkward! Something went wrong"
+    playRound _    _  gs t | length gs >= 6 = puts ("You lost! The answer was: " <> unwordle (getAnswer t))
+    playRound dict ws [] t | Just guess <- firstGuess = respondTo dict ws [] t guess
+    playRound dict ws [] t | auto = randomWordle ws >>= respondTo dict ws [] t
+    playRound dict ws gs t | auto, Just (_, best) <- bestNextGuesses ws = respondTo dict ws gs t (head best)
+    playRound dict ws gs t = do
+      when (hints >= Suggestions) $ do
+        puts (tshow (length ws) <> " candidates")
+        suggest ws
 
-    respondTo dict words n t w = do
-      case (w == t, Set.member w dict) of
-        (True, _) -> puts (displayGuess (cluesFromWord w w) w) >> puts ("You won in " <> tshow n <> "!")
-        (_, True) -> do let g = cluesFromWord t w
-                        puts (displayGuess g w)
-                        playRound dict (query g words) (n + 1) t
-        _         -> puts "Invalid word!" >> playRound dict words n t
+      when (hints >= Alphabet) $ do
+        let clues = foldMap (learn t) gs
+        let wrong = Set.fromList (wrongCharacters clues)
+        let right = Set.fromList (knownCharacters clues)
+        let iffy  = Set.fromList (misplacedCharacters clues)
+        liftIO . Rainbow.putChunksLn $ T.unpack alphabet <&> \c ->
+          let letter = Rainbow.chunk (T.singleton c) in
+          case (Set.member c wrong, Set.member c right, Set.member c iffy) of
+            (True, _, _) -> "_"
+            (_, True, _) -> fore green letter
+            (_, _, True) -> fore yellow letter
+            _            -> letter
 
-candidates :: Clues -> RIO App (Vector Text)
+      w <- prompt
+
+      case mkWordle w of
+        Nothing -> puts "Invalid word!" >> playRound dict ws gs t
+        Just wrdl -> respondTo dict ws gs t wrdl
+
+    respondTo :: Set Wordle -> Vector Wordle -> [Wordle] -> Answer -> Wordle -> CLI ()
+    respondTo dict wordList gs t w = case (Answer w == t, Set.member w dict) of
+        (True, _) -> puts (displayGuess (learn t w) w) >> puts ("You won in " <> tshow (length gs + 1) <> "!")
+        (_, True) -> do let k = learn t w
+                        puts (displayGuess k w)
+                        playRound dict (query k wordList) (w : gs) t
+        _         -> puts "Invalid word!" >> playRound dict wordList gs t
+
+    randomWordle dict = (dict !) <$> randomRIO (0, length dict - 1)
+
+alphabet :: Text
+alphabet = T.pack ['a' .. 'z']
+
+candidates :: Knowledge -> CLI (Vector Wordle)
 candidates g = do
   verbosely (asks appOptions >>= puts . tshow)
   asks (query g . appWordList)
 
+puts :: Text -> CLI ()
 puts = liftIO . IO.putStrLn
 
-verbosely :: RIO App () -> RIO App ()
+verbosely :: CLI () -> CLI ()
 verbosely act = do
   v <- asks (optionsVerbose . appOptions)
   when v act
 
-suggest candidates = when (length candidates < 500) $ forM_ (bestNextGuesses candidates) $ \(n, best) -> do
+maxSuggestLimit :: Int
+maxSuggestLimit = 500
+
+suggest :: Vector Wordle -> CLI ()
+suggest possible = when (length possible < maxSuggestLimit) $ forM_ (bestNextGuesses possible) $ \(n, best) -> do
   puts $ "Suggested guesses: (" <> tshow n <> " on average)"
-  mapM_ (puts . (" - " <>)) best
+  mapM_ (puts . (" - " <>) . unwordle) best
 
+prompt :: CLI Text
 prompt = liftIO (IO.hPutStr stdout "> " >> hFlush stdout >> IO.getLine)
-

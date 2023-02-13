@@ -2,7 +2,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Main (main) where
 
-import Data.Char
 import Import
 import Run
 import RIO.Process
@@ -28,8 +27,10 @@ main = do
        addCommand "play"
                   "Play a game"
                   id
-                  (play <$> switch (long "hints" <> help "Show suggested next moves")
+                  (play <$> parseHints
                         <*> switch (long "auto"  <> help "Play suggested next moves")
+                        <*> optional (option (Answer <$> eitherReader parseGuess)
+                                             (long "answer" <> metavar "WORD" <> help "The answer"))
                         <*> optional guess)
 
   lo <- logOptionsHandle stderr (optionsVerbose options)
@@ -54,13 +55,20 @@ wordsFile name f = strOption (long name
                     <> showDefault
                     <> value (f defaultOptions))
 
-guess :: Parser Text
-guess = argument (eitherReader $ \s -> if length s == 5 && all isAsciiLower s
-                                          then pure (T.pack s)
-                                          else Left "Guesses must be wordles")
-                 (metavar "GUESS" <> help "A word to guess")
+guess :: Parser Wordle
+guess = argument (eitherReader parseGuess) (metavar "GUESS" <> help "A word to guess")
 
-clues :: Parser Clues
+parseHints :: Parser Hints
+parseHints =   flag' Suggestions (long "hints" <> help "Show suggested next moves")
+           <|> flag' NoHints     (long "no-hints" <> help "No help at all")
+           <|> pure Alphabet
+
+parseGuess :: String -> Either String Wordle
+parseGuess s = case mkWordle (T.pack s) of
+                 Nothing -> Left "not a wordle"
+                 Just w -> pure w
+
+clues :: Parser Knowledge
 clues = fmap mconcat
       . many
       $ argument (eitherReader parseClue)

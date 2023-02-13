@@ -31,6 +31,7 @@ library
       base >=4.11 && <10
     , foldl
     , parallel
+    , rainbow
     , random
     , rio >=0.1.12.0
     , text
@@ -48,6 +49,7 @@ executable wordlizer
     , foldl
     , optparse-simple
     , parallel
+    , rainbow
     , random
     , rio >=0.1.12.0
     , text
@@ -68,6 +70,7 @@ test-suite wordlizer-test
     , foldl
     , hspec
     , parallel
+    , rainbow
     , random
     , rio >=0.1.12.0
     , text

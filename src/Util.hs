@@ -1,5 +1,4 @@
 {-# LANGUAGE NoImplicitPrelude #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
 
@@ -9,8 +8,9 @@ module Util
   , parseClue
   , bestNextGuesses
   , specificity
-  , cluesFromWord
+  , learn
   , displayGuess
+  , matchesKnowledge
   ) where
 
 import RIO
@@ -18,22 +18,23 @@ import Types
 import qualified RIO.Text as T
 import qualified RIO.Text.Partial as T (replace)
 import qualified RIO.Set as Set
+import qualified RIO.Map as Map
 import qualified RIO.List as L
 import qualified RIO.Vector as V
 import Data.Char
 import Control.Parallel.Strategies (using, parTraversable, rdeepseq)
 import qualified Control.Foldl as Foldl
 
-wordles :: Text -> Vector Text
-wordles = V.fromList . filter (T.all isAsciiLower) . filter ((== 5) . T.length) . T.lines
+wordles :: Text -> Vector Wordle
+wordles = V.fromList . ((maybeToList . mkWordle) <=< T.lines)
 
-restrict :: Clues -> Text -> Bool
-restrict clues w = all (matchesClue w) clues
+restrict :: Knowledge -> Wordle -> Bool
+restrict = matchesKnowledge
 
-query :: Clues -> Vector Text -> Vector Text
+query :: Knowledge -> Vector Wordle -> Vector Wordle
 query g = V.filter (restrict g)
 
-bestNextGuesses :: Vector Text -> Maybe (Double, [Text])
+bestNextGuesses :: Vector Wordle -> Maybe (Double, [Wordle])
 bestNextGuesses ws
   = (>>= bestGuess)
   . L.headMaybe
@@ -45,42 +46,83 @@ bestNextGuesses ws
   where
     bestGuess best = (, snd <$> best) . fst <$> L.headMaybe best
 
-specificity :: Vector Text -> Text -> Double
+specificity :: Vector Wordle -> Wordle -> Double
 specificity ws word = Foldl.fold average (fmap (realToFrac . candidatesGiven) ws `using` parTraversable rdeepseq)
   where
-    candidatesGiven correct = let g = cluesFromWord correct word in length (query g ws)
+    candidatesGiven correct = let k = learn (Answer correct) word in length (query k ws)
     average = (/) <$> Foldl.sum <*> Foldl.genericLength
 
-cluesFromWord :: Text -> Text -> Clues
-cluesFromWord target guess = Set.fromList $ filter (matchesClue target) (correct <> misplaced <> wrong)
+learn :: Answer -> Wordle -> Knowledge
+learn (Answer target) guess = Knowledge 
+  { known = correct
+  , excluded = incorrect
+  , somewhere = Map.filter (> 0) $ Map.intersectionWith min (counts target) (counts guess)
+  }
   where
-    clues how = zipWith how [0..] (T.unpack guess)
+    (correct, incorrect) = foldl' (\(right, wrong) (i, f) ->
+                                    let c = f guess
+                                    in if f target == c
+                                       then (Map.insert i c right, wrong)
+                                       else (right, Set.insert (i, c) wrong))
+                                  (mempty, mempty)
+                                  (zip [0..] [chr0, chr1, chr2, chr3, chr4])
 
-    correct   = clues Correct
-    misplaced = clues Misplaced
-    wrong     = Wrong <$> T.unpack guess
+counts :: Wordle -> Map Char Int
+counts w = Map.fromListWith (+) $ zip (characters w) (L.repeat 1)
 
-displayGuess :: Clues -> Text -> Text
-displayGuess clues = T.unpack >>> zipWith f [0..] >>> mconcat >>> T.replace "][" ""
+displayGuess :: Knowledge -> Wordle -> Text
+displayGuess k w = T.replace "][" "" . fst $ foldl' go (mempty, misplaced) chars
   where
-    f i c | Set.member (Correct i c) clues = T.toUpper (T.singleton c)
-    f i c | Set.member (Misplaced i c) clues = T.singleton c
-    f _ c = "[" <> T.singleton c <> "]"
+    misplaced = foldl' (flip (Map.adjust (subtract 1)))
+                       (somewhere k)
+                       (Map.elems (known k))
 
-parseClue :: String -> Either String Clues
-parseClue = extract 0
+    chars = [(c0, chr0)
+            ,(c1, chr1)
+            ,(c2, chr2)
+            ,(c3, chr3)
+            ,(c4, chr4)
+            ]
+
+    go (str, misp) (kf, wf) = case (kf k, wf w) of
+      (Just c, c') | c == c' -> (str <> T.toUpper (T.singleton c), misp)
+      (_, c') -> let remaining = fromMaybe 0 (Map.lookup c' misp)
+                  in if remaining > 0
+                        then (str <> T.singleton c', Map.adjust (subtract 1) c' misp)
+                        else (str <> "[" <> T.singleton c' <> "]", misp)
+
+parseClue :: String -> Either String Knowledge
+parseClue = fmap (cleanUp . infer . foldl' (\k f -> f k) noKnowledge) . extract 0
   where
-    extract 5 [] = pure mempty
+    -- if we know a position, remove any exclusions
+    cleanUp k = k { excluded = Set.difference (excluded k) (Set.fromList $ Map.toList (known k)) }
+
+    -- infer that any exclusion not named as a somewhere must be excluded everywhere
+    infer k = let nowhere = (L.nub . fmap snd . Set.toList $ excluded k) L.\\ Map.keys (somewhere k)
+              in k { excluded = Set.union (excluded k) (Set.fromList [(i, c) | i <- [0..4], c <- nowhere]) }
+
+    wrong i c k = k { excluded = foldl' (\m i' -> Set.insert (i', c) m) (excluded k) [i..4] }
+
+    correct i c k = k { known = Map.insert i c (known k)
+                      , somewhere = Map.unionWith (+) (somewhere k) (Map.singleton c 1)
+                      }
+
+    misplaced i c k = k { somewhere = Map.unionWith (+) (somewhere k) (Map.singleton c 1)
+                        , excluded = Set.insert (i, c) (excluded k)
+                        }
+
+    extract :: Int -> String -> Either String [Knowledge -> Knowledge]
+    extract 5 [] = pure [id]
     extract n [] = Left ("Expected exactly 5 characters. Got: " <> show n)
     extract n _ | n > 4 = Left "Maximum 5 characters expected"
 
     extract n (c:cs) | isAsciiLower c = do
       g <- extract (n + 1) cs
-      pure $ Set.insert (Misplaced n c) g
+      pure (misplaced n c : g)
 
     extract n (c:cs) | isAsciiUpper c = do
       g <- extract (n + 1) cs
-      pure $ Set.insert (Correct n (toLower c)) g
+      pure (correct n (toLower c) : g)
 
     extract n ('[':rst) =
       let f = (&&) <$> isAsciiLower <*> (/= ']')
@@ -89,15 +131,18 @@ parseClue = extract 0
           m = n + length nots
       in case rst' of
         _ | m > 5 -> Left "Too many bad characters."
-        (']':s) -> do let bad = Set.fromList (Wrong <$> nots)
+        (']':s) -> do let bad = wrong n <$> nots
                       g <- extract (n + length nots) s
                       pure (g <> bad)
         _ -> Left "Expected ]"
 
     extract _ s = Left ("Cannot parse: " <> s)
 
-matchesClue :: Text -> Clue -> Bool
-matchesClue w clue = case clue of
-  Wrong c       -> not $ T.isInfixOf (T.singleton c) w
-  Correct i c   -> T.index w i == c
-  Misplaced i c -> maybe False (/= i) (T.findIndex (== c) w)
+matchesKnowledge :: Knowledge -> Wordle -> Bool
+matchesKnowledge k (Guess a b c d e)
+  =  maybe True (== a) (c0 k)
+  && maybe True (== b) (c1 k)
+  && maybe True (== c) (c2 k)
+  && maybe True (== d) (c3 k)
+  && maybe True (== e) (c4 k)
+  && and [not (Set.member key (excluded k)) | key <- zip [0..] [a, b, c, d, e]]
