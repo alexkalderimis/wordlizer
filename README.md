@@ -1,5 +1,7 @@
 # wordlizer
 
+![CI status badge](https://github.com/alexkalderimis/wordlizer/actions/workflows/ci.yml/badge.svg)
+
 Simple tool to find candidate [wordle](https://www.powerlanguage.co.uk/wordle/) solutions from `/usr/dict/words`
 
 ## Example
