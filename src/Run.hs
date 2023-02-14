@@ -41,6 +41,9 @@ appraise w k = do
 maxRounds :: Int
 maxRounds = 6
 
+maxSuggestLimit :: Int
+maxSuggestLimit = 800
+
 play :: Hints -> Bool -> Maybe Answer -> Maybe Wordle -> CLI ()
 play hints auto manswer firstGuess = do
   wordList <- asks appWordList
@@ -116,9 +119,6 @@ verbosely :: CLI () -> CLI ()
 verbosely act = do
   v <- asks (optionsVerbose . appOptions)
   when v act
-
-maxSuggestLimit :: Int
-maxSuggestLimit = 500
 
 suggest :: Knowledge -> Vector Wordle -> CLI ()
 suggest k possible = when (length possible < maxSuggestLimit) $ forM_ (bestNextGuesses k possible) $ \(n, best) -> do
