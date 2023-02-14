@@ -10,6 +10,8 @@ import qualified RIO.Text as T
 import qualified RIO.Vector as V
 import qualified RIO.Set as Set
 import qualified Paths_wordlizer
+import qualified System.Environment.XDG.BaseDir as XDG 
+import qualified RIO.Directory as Directory
 
 main :: IO ()
 main = do
@@ -39,6 +41,7 @@ main = do
   pc <- mkDefaultProcessContext
   wordList <- wordles <$> readFileUtf8 (wordListFile options)
   fullDict <- wordles <$> readFileUtf8 (fullDictFile options)
+  suggestCache <- XDG.getUserCacheFile "wordlizer" "suggestions" >>= Directory.makeAbsolute
 
   withLogFunc lo $ \lf ->
     let app = App
@@ -47,6 +50,7 @@ main = do
           , appOptions = options
           , appWordList = wordList
           , appFullDict = Set.fromList . V.toList $ fullDict
+          , appSuggestCache = suggestCache
           }
      in runRIO app cmd
 

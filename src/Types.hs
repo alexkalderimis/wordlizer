@@ -12,6 +12,8 @@ import qualified RIO.Text as T
 import qualified RIO.Set as Set
 import qualified RIO.Map as Map
 import RIO.Process
+import Data.Aeson (FromJSON(..), ToJSON(..))
+import qualified Data.Aeson as Aeson
 
 data Wordle = Guess
   { chr0 :: {-# UNPACK #-} !Char
@@ -22,8 +24,16 @@ data Wordle = Guess
   }
   deriving (Show, Eq, Ord, Generic, NFData)
 
+instance Hashable Wordle
+
 newtype Answer = Answer { getAnswer :: Wordle }
   deriving (Eq)
+
+instance FromJSON Wordle where
+  parseJSON = Aeson.withText "Wordle" (maybe (fail "Not a wordle") pure . mkWordle)
+
+instance ToJSON Wordle where
+  toJSON = toJSON . unwordle
 
 mkWordle :: T.Text -> Maybe Wordle
 mkWordle t | T.length t /= 5 = Nothing
@@ -40,7 +50,9 @@ data Knowledge = Knowledge
   { known :: !(Map Int Char)
   , somewhere :: !(Map Char Int)
   , excluded :: !(Set (Int, Char))
-  } deriving (Eq, Show, Ord)
+  } deriving (Eq, Show, Ord, Generic)
+
+instance Hashable Knowledge
 
 instance Semigroup Knowledge where
   a <> b = Knowledge { known = Map.union (known a) (known b)
@@ -95,6 +107,7 @@ data App = App
   , appLogFunc :: !LogFunc
   , appProcessContext :: !ProcessContext
   , appOptions :: !Options
+  , appSuggestCache :: !FilePath
   }
 
 instance HasLogFunc App where

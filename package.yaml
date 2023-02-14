@@ -25,6 +25,12 @@ dependencies:
 - random
 - foldl
 - rainbow
+- hashable
+- aeson
+- time
+- bytestring
+- directory
+- filepath
 
 ghc-options:
 - -Wall
@@ -45,6 +51,7 @@ executables:
     dependencies:
     - wordlizer
     - optparse-simple
+    - xdg-basedir
 
     ghc-options:
     - -threaded

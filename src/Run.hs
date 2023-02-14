@@ -5,6 +5,8 @@
 module Run (solve, appraise, play) where
 
 import Import
+import FileCache (getCachedJSONQuery)
+
 import System.Random (randomRIO)
 import Text.Printf (printf)
 import qualified Data.Text.IO as IO
@@ -12,6 +14,9 @@ import qualified RIO.Text as T
 import qualified RIO.Vector as V
 import qualified RIO.Set as Set
 import qualified RIO.List as L
+import Data.Hashable (hash)
+import Data.Time.Clock (NominalDiffTime)
+import RIO.FilePath ((</>))
 import           RIO.Vector.Partial ((!))
 import qualified Rainbow
 import           Rainbow (fore, green, yellow)
@@ -61,7 +66,7 @@ play hints auto manswer firstGuess = do
           _         -> puts "Invalid word!" >> playRound k possible n
 
       nextGuess k wl = if auto
-                     then pure (bestNextGuesses k wl >>= L.headMaybe . snd)
+                     then suggestGuess k wl
                      else fmap mkWordle prompt
 
       playRound !k !wl !n = case n of
@@ -79,6 +84,16 @@ play hints auto manswer firstGuess = do
             Just wrdl -> respondTo k wl n wrdl
 
   playRound mempty (wordListWith (getAnswer target) wordList) 0
+
+cacheExiry :: NominalDiffTime
+cacheExiry = 24 * 60 * 60
+
+suggestGuess :: Knowledge -> Vector Wordle -> RIO App (Maybe Wordle)
+suggestGuess k ws = do
+  suggestCache <- asks appSuggestCache
+  let h = hash (k, V.toList ws)
+  let filename = suggestCache </> printf "%010d.json" h 
+  liftIO . getCachedJSONQuery filename cacheExiry $ pure (bestNextGuesses k ws >>= L.headMaybe . snd)
 
 wordListWith :: Wordle -> Vector Wordle -> Vector Wordle
 wordListWith w = V.fromList . Set.toList . Set.insert w . Set.fromList . V.toList
