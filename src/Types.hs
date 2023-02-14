@@ -31,9 +31,9 @@ characters :: Wordle -> [Char]
 characters (Guess a b c d e) = [a, b, c, d, e]
 
 data Knowledge = Knowledge
-  { known :: Map Int Char
-  , somewhere :: Map Char Int
-  , excluded :: Set (Int, Char)
+  { known :: !(Map Int Char)
+  , somewhere :: !(Map Char Int)
+  , excluded :: !(Set (Int, Char))
   } deriving (Eq, Show, Ord)
 
 instance Semigroup Knowledge where

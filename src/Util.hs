@@ -3,7 +3,7 @@
 {-# LANGUAGE TupleSections #-}
 
 module Util
-  ( restrict, query
+  ( query
   , wordles
   , parseClue
   , bestNextGuesses
@@ -28,22 +28,20 @@ import qualified Control.Foldl as Foldl
 wordles :: Text -> Vector Wordle
 wordles = V.fromList . ((maybeToList . mkWordle) <=< T.lines)
 
-restrict :: Knowledge -> Wordle -> Bool
-restrict = matchesKnowledge
-
 query :: Knowledge -> Vector Wordle -> Vector Wordle
-query g = V.filter (restrict g)
+query g = V.filter (matchesKnowledge g)
 
 bestNextGuesses :: Knowledge -> Vector Wordle -> Maybe (Double, [Wordle])
 bestNextGuesses priorK ws
-  = (>>= bestGuess)
-  . L.headMaybe
-  . L.groupBy (\a b -> fst a == fst b)
-  . L.sortOn fst
-  . V.toList
-  $ (fmap (specificity priorK ws &&& id) ws `using` parTraversable rdeepseq)
+  = bestGuess <=< bestGroup
+  $ (addSpecificities ws `using` parTraversable rdeepseq)
 
   where
+    bestGroup = L.headMaybe
+              . L.groupBy (\a b -> fst a == fst b)
+              . L.sortOn fst
+              . V.toList
+    addSpecificities = fmap (specificity priorK ws &&& id)
     bestGuess best = (, snd <$> best) . fst <$> L.headMaybe best
 
 specificity :: Knowledge -> Vector Wordle -> Wordle -> Double
