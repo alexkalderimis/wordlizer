@@ -89,6 +89,16 @@ spec = do
       "[wibble]" `failsWith` "Too many bad characters."
 
   describe "learn" $ do
+    it "knows that excluded letters are excluded everywhere" $ do
+      a <- Answer <$> wordle "usage"
+      b <- wordle "vends"
+      let k = learn a b
+
+      k `shouldBe` Knowledge { known = mempty
+                             , somewhere = Map.fromList [('e',1),('s',1)]
+                             , excluded = Set.fromList [(1,'e'),(4,'s')] <> Set.fromList [(i, c) | i <- [0..4], c <- "vnd"]
+                             }
+
     it "learns correct information, without leaking it" $ do
       a <- wordle "ababa"
       w <- wordle "babab"

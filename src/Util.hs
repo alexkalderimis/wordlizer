@@ -51,7 +51,7 @@ specificity priorK ws word = Foldl.fold average (fmap (realToFrac . candidatesGi
     average = (/) <$> Foldl.sum <*> Foldl.genericLength
 
 learn :: Answer -> Wordle -> Knowledge
-learn (Answer target) guess = Knowledge 
+learn (Answer target) guess = drawConclusions $ Knowledge 
   { known = correct
   , excluded = incorrect
   , somewhere = Map.filter (> 0) $ Map.intersectionWith min (counts target) (counts guess)
@@ -89,8 +89,8 @@ displayGuess k w = T.replace "][" "" . fst $ foldl' go (mempty, misplaced) chars
                         then (str <> T.singleton c', Map.adjust (subtract 1) c' misp)
                         else (str <> "[" <> T.singleton c' <> "]", misp)
 
-parseClue :: String -> Either String Knowledge
-parseClue = fmap (cleanUp . infer . foldl' (\k f -> f k) noKnowledge) . extract 0
+drawConclusions :: Knowledge -> Knowledge
+drawConclusions = cleanUp . infer
   where
     -- if we know a position, remove any exclusions
     cleanUp k = k { excluded = Set.difference (excluded k) (Set.fromList $ Map.toList (known k)) }
@@ -98,6 +98,10 @@ parseClue = fmap (cleanUp . infer . foldl' (\k f -> f k) noKnowledge) . extract 
     -- infer that any exclusion not named as a somewhere must be excluded everywhere
     infer k = let nowhere = (L.nub . fmap snd . Set.toList $ excluded k) L.\\ Map.keys (somewhere k)
               in k { excluded = Set.union (excluded k) (Set.fromList [(i, c) | i <- [0..4], c <- nowhere]) }
+
+parseClue :: String -> Either String Knowledge
+parseClue = fmap (drawConclusions . foldl' (\k f -> f k) noKnowledge) . extract 0
+  where
 
     wrong i c k = k { excluded = foldl' (\m i' -> Set.insert (i', c) m) (excluded k) [i..4] }
 
@@ -138,9 +142,9 @@ parseClue = fmap (cleanUp . infer . foldl' (\k f -> f k) noKnowledge) . extract 
 
 matchesKnowledge :: Knowledge -> Wordle -> Bool
 matchesKnowledge k (Guess a b c d e)
-  =  maybe True (== a) (c0 k)
+  = and [not (Set.member key (excluded k)) | key <- zip [0..] [a, b, c, d, e]]
+  && maybe True (== a) (c0 k)
   && maybe True (== b) (c1 k)
   && maybe True (== c) (c2 k)
   && maybe True (== d) (c3 k)
   && maybe True (== e) (c4 k)
-  && and [not (Set.member key (excluded k)) | key <- zip [0..] [a, b, c, d, e]]
