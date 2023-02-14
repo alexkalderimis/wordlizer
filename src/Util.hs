@@ -34,22 +34,22 @@ restrict = matchesKnowledge
 query :: Knowledge -> Vector Wordle -> Vector Wordle
 query g = V.filter (restrict g)
 
-bestNextGuesses :: Vector Wordle -> Maybe (Double, [Wordle])
-bestNextGuesses ws
+bestNextGuesses :: Knowledge -> Vector Wordle -> Maybe (Double, [Wordle])
+bestNextGuesses priorK ws
   = (>>= bestGuess)
   . L.headMaybe
   . L.groupBy (\a b -> fst a == fst b)
   . L.sortOn fst
   . V.toList
-  $ (fmap (specificity ws &&& id) ws `using` parTraversable rdeepseq)
+  $ (fmap (specificity priorK ws &&& id) ws `using` parTraversable rdeepseq)
 
   where
     bestGuess best = (, snd <$> best) . fst <$> L.headMaybe best
 
-specificity :: Vector Wordle -> Wordle -> Double
-specificity ws word = Foldl.fold average (fmap (realToFrac . candidatesGiven) ws `using` parTraversable rdeepseq)
+specificity :: Knowledge -> Vector Wordle -> Wordle -> Double
+specificity priorK ws word = Foldl.fold average (fmap (realToFrac . candidatesGiven) ws `using` parTraversable rdeepseq)
   where
-    candidatesGiven correct = let k = learn (Answer correct) word in length (query k ws)
+    candidatesGiven correct = let k = learn (Answer correct) word in length (query (priorK <> k) ws)
     average = (/) <$> Foldl.sum <*> Foldl.genericLength
 
 learn :: Answer -> Wordle -> Knowledge

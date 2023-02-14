@@ -25,16 +25,16 @@ solve g = do
     1 -> puts ("The answer is: " <> unwordle (possible ! 0))
     n | n >= maxCandidates -> do puts (tshow (length possible) <> " candidates:")
                                  puts "too many candidates to show! (use --max-candidates to allow showing more)"
-                                 suggest possible
+                                 suggest g possible
     _ -> do mapM_ (puts . unwordle) possible
-            suggest possible
+            suggest g possible
 
 appraise :: Wordle -> Knowledge -> CLI ()
-appraise w g = do
-  possible <- candidates g
+appraise w k = do
+  possible <- candidates k
   verbosely (puts (tshow (length possible) <> " candidates"))
-  suggest possible
-  liftIO (printf "Average specificity of %s: %.1f\n" (unwordle w) (specificity possible w))
+  suggest k possible
+  liftIO (printf "Average specificity of %s: %.1f\n" (unwordle w) (specificity k possible w))
 
 play :: Hints -> Bool -> Maybe Answer -> Maybe Wordle -> CLI ()
 play hints auto manswer firstGuess = do
@@ -45,18 +45,18 @@ play hints auto manswer firstGuess = do
               Just t -> pure t
   let ws = V.fromList . Set.toList . Set.fromList $ V.toList (pure (getAnswer target) <> wordList)
 
-  playRound dict ws [] target
+  playRound mempty dict ws [] target
   where
-    playRound :: Set Wordle -> Vector Wordle -> [Wordle] -> Answer -> CLI ()
-    playRound _    ws _ _  | V.null ws = puts "This is awkward! Something went wrong"
-    playRound _    _  gs t | length gs >= 6 = puts ("You lost! The answer was: " <> unwordle (getAnswer t))
-    playRound dict ws [] t | Just guess <- firstGuess = respondTo dict ws [] t guess
-    playRound dict ws [] t | auto = randomWordle ws >>= respondTo dict ws [] t
-    playRound dict ws gs t | auto, Just (_, best) <- bestNextGuesses ws = respondTo dict ws gs t (head best)
-    playRound dict ws gs t = do
+    playRound :: Knowledge -> Set Wordle -> Vector Wordle -> [Wordle] -> Answer -> CLI ()
+    playRound _ _    ws _ _  | V.null ws = puts "This is awkward! Something went wrong"
+    playRound _ _    _  gs t | length gs >= 6 = puts ("You lost! The answer was: " <> unwordle (getAnswer t))
+    playRound k dict ws [] t | Just guess <- firstGuess = respondTo k dict ws [] t guess
+    playRound k dict ws [] t | auto = randomWordle ws >>= respondTo k dict ws [] t
+    playRound k dict ws gs t | auto, Just (_, best) <- bestNextGuesses k ws = respondTo k dict ws gs t (head best)
+    playRound k dict ws gs t = do
       when (hints >= Suggestions) $ do
         puts (tshow (length ws) <> " candidates")
-        suggest ws
+        suggest k ws
 
       when (hints >= Alphabet) $ do
         let clues = foldMap (learn t) gs
@@ -74,16 +74,17 @@ play hints auto manswer firstGuess = do
       w <- prompt
 
       case mkWordle w of
-        Nothing -> puts "Invalid word!" >> playRound dict ws gs t
-        Just wrdl -> respondTo dict ws gs t wrdl
+        Nothing -> puts "Invalid word!" >> playRound k dict ws gs t
+        Just wrdl -> respondTo k dict ws gs t wrdl
 
-    respondTo :: Set Wordle -> Vector Wordle -> [Wordle] -> Answer -> Wordle -> CLI ()
-    respondTo dict wordList gs t w = case (Answer w == t, Set.member w dict) of
-        (True, _) -> puts (displayGuess (learn t w) w) >> puts ("You won in " <> tshow (length gs + 1) <> "!")
-        (_, True) -> do let k = learn t w
-                        puts (displayGuess k w)
-                        playRound dict (query k wordList) (w : gs) t
-        _         -> puts "Invalid word!" >> playRound dict wordList gs t
+    respondTo :: Knowledge -> Set Wordle -> Vector Wordle -> [Wordle] -> Answer -> Wordle -> CLI ()
+    respondTo k dict wordList gs t w =
+      let k' = k <> learn t w
+      in case (Answer w == t, Set.member w dict) of
+        (True, _) -> puts (displayGuess k' w) >> puts ("You won in " <> tshow (length gs + 1) <> "!")
+        (_, True) -> do puts (displayGuess k' w)
+                        playRound k' dict (query k' wordList) (w : gs) t
+        _         -> puts "Invalid word!" >> playRound k dict wordList gs t
 
     randomWordle dict = (dict !) <$> randomRIO (0, length dict - 1)
 
@@ -106,8 +107,8 @@ verbosely act = do
 maxSuggestLimit :: Int
 maxSuggestLimit = 500
 
-suggest :: Vector Wordle -> CLI ()
-suggest possible = when (length possible < maxSuggestLimit) $ forM_ (bestNextGuesses possible) $ \(n, best) -> do
+suggest :: Knowledge -> Vector Wordle -> CLI ()
+suggest k possible = when (length possible < maxSuggestLimit) $ forM_ (bestNextGuesses k possible) $ \(n, best) -> do
   puts $ "Suggested guesses: (" <> tshow n <> " on average)"
   mapM_ (puts . (" - " <>) . unwordle) best
 
