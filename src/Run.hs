@@ -92,7 +92,7 @@ suggestGuess :: Knowledge -> Vector Wordle -> RIO App (Maybe Wordle)
 suggestGuess k ws = do
   suggestCache <- asks appSuggestCache
   let h = hash (k, V.toList ws)
-  let filename = suggestCache </> printf "%010d.json" h 
+  let filename = suggestCache </> "best" </> printf "%010d.json" h 
   liftIO . getCachedJSONQuery filename cacheExiry $ pure (bestNextGuesses k ws >>= L.headMaybe . snd)
 
 wordListWith :: Wordle -> Vector Wordle -> Vector Wordle
@@ -136,9 +136,16 @@ verbosely act = do
   when v act
 
 suggest :: Knowledge -> Vector Wordle -> CLI ()
-suggest k possible = when (length possible < maxSuggestLimit) $ forM_ (bestNextGuesses k possible) $ \(n, best) -> do
-  puts $ "Suggested guesses: (" <> tshow n <> " on average)"
-  mapM_ (puts . (" - " <>) . unwordle) best
+suggest k possible = when (length possible < maxSuggestLimit) $ do
+  suggestCache <- asks appSuggestCache
+  let h = hash (k, V.toList possible)
+  let filename = suggestCache </> "all" </> printf "%010d.json" h 
+
+  guesses <- liftIO . getCachedJSONQuery filename cacheExiry $ pure (bestNextGuesses k possible)
+
+  forM_ guesses $ \(n, best) -> do
+    puts $ "Suggested guesses: (" <> tshow n <> " on average)"
+    mapM_ (puts . (" - " <>) . unwordle) best
 
 prompt :: CLI Text
 prompt = liftIO (IO.hPutStr stdout "> " >> hFlush stdout >> IO.getLine)
