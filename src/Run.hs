@@ -11,7 +11,7 @@ import qualified Data.Text.IO as IO
 import qualified RIO.Text as T
 import qualified RIO.Vector as V
 import qualified RIO.Set as Set
-import           RIO.List.Partial (head)
+import qualified RIO.List as L
 import           RIO.Vector.Partial ((!))
 import qualified Rainbow
 import           Rainbow (fore, green, yellow)
@@ -57,18 +57,21 @@ play hints auto manswer firstGuess = do
                           playRound k' possible' n'
           _         -> puts "Invalid word!" >> playRound k possible n
 
+      nextGuess k wl = if auto
+                     then pure (bestNextGuesses k wl >>= L.headMaybe . snd)
+                     else fmap mkWordle prompt
+
       playRound !k !wl !n = case n of
         _ | V.null wl -> puts "This is awkward! Something went wrong (no possible answers)"
         0 | Just guess <- firstGuess -> respondTo k wl 0 guess
         0 | auto -> randomWordle wl >>= respondTo k wl 0
         _ | n >= maxRounds -> puts ("You lost! The answer was: " <> unwordle (getAnswer target))
-        _ | auto, Just (_, best) <- bestNextGuesses k wl -> respondTo k wl n (head best)
         _ -> do
           hint hints k wl
 
-          w <- prompt
+          mw <- nextGuess k wl
 
-          case mkWordle w of
+          case mw of
             Nothing -> puts "Invalid word!" >> playRound k wl n
             Just wrdl -> respondTo k wl n wrdl
 

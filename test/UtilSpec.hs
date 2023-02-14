@@ -110,9 +110,33 @@ spec = do
                              }
 
   describe "matchesKnowledge" $ do
-    it "usage is a suitable solution to [ad]AGE" $ do
+    specify "usage is a suitable solution to [ad]AGE" $ do
       k <- clue "[ad]AGE"
       a <- wordle "usage"
+      a `shouldSatisfy` matchesKnowledge k
+
+    specify "xxxxd is not a suitable solution to [vends]" $ do
+      k <- clue "[vends]"
+      a <- wordle "xxxxd"
+
+      a `shouldSatisfy` (not . matchesKnowledge k)
+
+    specify "xxxxx is a suitable solution to [vends]" $ do
+      k <- clue "[vends]"
+      a <- wordle "xxxxx"
+
+      a `shouldSatisfy` matchesKnowledge k
+
+    it "checks for somewheres, negative case" $ do
+      k <- clue "[ven]ds"
+      a <- wordle "xxxxx"
+
+      a `shouldSatisfy` (not . matchesKnowledge k)
+
+    it "checks for somewheres, positive case" $ do
+      k <- clue "[ven]ds"
+      a <- wordle "dsxxx"
+
       a `shouldSatisfy` matchesKnowledge k
 
   describe "wordles" $ do

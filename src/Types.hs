@@ -13,7 +13,13 @@ import qualified RIO.Set as Set
 import qualified RIO.Map as Map
 import RIO.Process
 
-data Wordle = Guess { chr0 :: !Char, chr1 :: Char, chr2 :: Char, chr3 :: Char, chr4 :: Char }
+data Wordle = Guess
+  { chr0 :: {-# UNPACK #-} !Char
+  , chr1 :: {-# UNPACK #-} !Char
+  , chr2 :: {-# UNPACK #-} !Char
+  , chr3 :: {-# UNPACK #-} !Char
+  , chr4 :: {-# UNPACK #-} !Char
+  }
   deriving (Show, Eq, Ord, Generic, NFData)
 
 newtype Answer = Answer { getAnswer :: Wordle }

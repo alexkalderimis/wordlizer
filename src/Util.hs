@@ -142,9 +142,16 @@ parseClue = fmap (drawConclusions . foldl' (\k f -> f k) noKnowledge) . extract 
 
 matchesKnowledge :: Knowledge -> Wordle -> Bool
 matchesKnowledge k (Guess a b c d e)
-  = and [not (Set.member key (excluded k)) | key <- zip [0..] [a, b, c, d, e]]
-  && maybe True (== a) (c0 k)
-  && maybe True (== b) (c1 k)
-  && maybe True (== c) (c2 k)
-  && maybe True (== d) (c3 k)
-  && maybe True (== e) (c4 k)
+  =  maybe (allowedIn 0 a) (== a) (c0 k)
+  && maybe (allowedIn 1 b) (== b) (c1 k)
+  && maybe (allowedIn 2 c) (== c) (c2 k)
+  && maybe (allowedIn 3 d) (== d) (c3 k)
+  && maybe (allowedIn 4 e) (== e) (c4 k)
+  && and [hasEnough character n | (character, n) <- Map.toList (somewhere k)]
+  where 
+    allowedIn i character = not $ Set.member (i, character) (excluded k)
+    hasEnough character n = atLeast n $ filter (== character) [a, b, c, d, e]
+    atLeast n xs = case xs of _ | n < 1 -> True
+                              []        -> False
+                              (_ : tl)  -> atLeast (n - 1) tl
+    
