@@ -47,7 +47,7 @@ bestNextGuesses priorK ws
 specificity :: Knowledge -> Vector Wordle -> Wordle -> Double
 specificity priorK ws word = Foldl.fold average (fmap (realToFrac . candidatesGiven) ws `using` parTraversable rdeepseq)
   where
-    candidatesGiven correct = let k = learn (Answer correct) word in length (query (priorK <> k) ws)
+    candidatesGiven correct = let k = learn (Answer correct) word in length . filter (matchesKnowledge (priorK <> k)) $ V.toList ws
     average = (/) <$> Foldl.sum <*> Foldl.genericLength
 
 learn :: Answer -> Wordle -> Knowledge

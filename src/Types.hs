@@ -85,7 +85,7 @@ defaultOptions = Options
 
 data App = App
   { appWordList :: !(Vector Wordle)
-  , appFullDict :: !(Vector Wordle)
+  , appFullDict :: !(Set Wordle)
   , appLogFunc :: !LogFunc
   , appProcessContext :: !ProcessContext
   , appOptions :: !Options

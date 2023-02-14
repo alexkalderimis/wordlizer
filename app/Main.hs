@@ -7,6 +7,8 @@ import Run
 import RIO.Process
 import Options.Applicative.Simple
 import qualified RIO.Text as T
+import qualified RIO.Vector as V
+import qualified RIO.Set as Set
 import qualified Paths_wordlizer
 
 main :: IO ()
@@ -44,7 +46,7 @@ main = do
           , appProcessContext = pc
           , appOptions = options
           , appWordList = wordList
-          , appFullDict = fullDict
+          , appFullDict = Set.fromList . V.toList $ fullDict
           }
      in runRIO app cmd
 

@@ -1,5 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE BangPatterns #-}
+
 module Run (solve, appraise, play) where
 
 import Import
@@ -36,57 +38,65 @@ appraise w k = do
   suggest k possible
   liftIO (printf "Average specificity of %s: %.1f\n" (unwordle w) (specificity k possible w))
 
+maxRounds :: Int
+maxRounds = 6
+
 play :: Hints -> Bool -> Maybe Answer -> Maybe Wordle -> CLI ()
 play hints auto manswer firstGuess = do
   wordList <- asks appWordList
-  dict <- Set.fromList . (maybeToList firstGuess <>) . V.toList . (wordList <>) <$> asks appFullDict
-  target <- case manswer of
-              Nothing -> Answer <$> randomWordle wordList
-              Just t -> pure t
-  let ws = V.fromList . Set.toList . Set.fromList $ V.toList (pure (getAnswer target) <> wordList)
+  dict <- asks appFullDict
+  target <- maybe (Answer <$> randomWordle wordList) pure manswer
 
-  playRound mempty dict ws [] target
-  where
-    playRound :: Knowledge -> Set Wordle -> Vector Wordle -> [Wordle] -> Answer -> CLI ()
-    playRound _ _    ws _ _  | V.null ws = puts "This is awkward! Something went wrong"
-    playRound _ _    _  gs t | length gs >= 6 = puts ("You lost! The answer was: " <> unwordle (getAnswer t))
-    playRound k dict ws [] t | Just guess <- firstGuess = respondTo k dict ws [] t guess
-    playRound k dict ws [] t | auto = randomWordle ws >>= respondTo k dict ws [] t
-    playRound k dict ws gs t | auto, Just (_, best) <- bestNextGuesses k ws = respondTo k dict ws gs t (head best)
-    playRound k dict ws gs t = do
-      when (hints >= Suggestions) $ do
-        puts (tshow (length ws) <> " candidates")
-        suggest k ws
+  let respondTo !k !possible !n !w =
+        let k' = k <> learn target w
+            n' = n + 1
+        in case (Answer w == target, Set.member w dict) of
+          (True, _) -> puts (displayGuess k' w) >> puts ("You won in " <> tshow n' <> "!")
+          (_, True) -> do puts (displayGuess k' w)
+                          let possible' = query k' possible
+                          playRound k' possible' n'
+          _         -> puts "Invalid word!" >> playRound k possible n
 
-      when (hints >= Alphabet) $ do
-        let clues = foldMap (learn t) gs
-        let wrong = Set.fromList (wrongCharacters clues)
-        let right = Set.fromList (knownCharacters clues)
-        let iffy  = Set.fromList (misplacedCharacters clues)
-        liftIO . Rainbow.putChunksLn $ T.unpack alphabet <&> \c ->
-          let letter = Rainbow.chunk (T.singleton c) in
-          case (Set.member c wrong, Set.member c right, Set.member c iffy) of
-            (True, _, _) -> "_"
-            (_, True, _) -> fore green letter
-            (_, _, True) -> fore yellow letter
-            _            -> letter
+      playRound !k !wl !n = case n of
+        _ | V.null wl -> puts "This is awkward! Something went wrong (no possible answers)"
+        0 | Just guess <- firstGuess -> respondTo k wl 0 guess
+        0 | auto -> randomWordle wl >>= respondTo k wl 0
+        _ | n >= maxRounds -> puts ("You lost! The answer was: " <> unwordle (getAnswer target))
+        _ | auto, Just (_, best) <- bestNextGuesses k wl -> respondTo k wl n (head best)
+        _ -> do
+          hint hints k wl
 
-      w <- prompt
+          w <- prompt
 
-      case mkWordle w of
-        Nothing -> puts "Invalid word!" >> playRound k dict ws gs t
-        Just wrdl -> respondTo k dict ws gs t wrdl
+          case mkWordle w of
+            Nothing -> puts "Invalid word!" >> playRound k wl n
+            Just wrdl -> respondTo k wl n wrdl
 
-    respondTo :: Knowledge -> Set Wordle -> Vector Wordle -> [Wordle] -> Answer -> Wordle -> CLI ()
-    respondTo k dict wordList gs t w =
-      let k' = k <> learn t w
-      in case (Answer w == t, Set.member w dict) of
-        (True, _) -> puts (displayGuess k' w) >> puts ("You won in " <> tshow (length gs + 1) <> "!")
-        (_, True) -> do puts (displayGuess k' w)
-                        playRound k' dict (query k' wordList) (w : gs) t
-        _         -> puts "Invalid word!" >> playRound k dict wordList gs t
+  playRound mempty (wordListWith (getAnswer target) wordList) 0
 
-    randomWordle dict = (dict !) <$> randomRIO (0, length dict - 1)
+wordListWith :: Wordle -> Vector Wordle -> Vector Wordle
+wordListWith w = V.fromList . Set.toList . Set.insert w . Set.fromList . V.toList
+
+hint :: Hints -> Knowledge -> Vector Wordle -> CLI ()
+hint hints k wl = do
+  when (hints >= Suggestions) $ do
+    puts (tshow (V.length wl) <> " candidates")
+    suggest k wl
+
+  when (hints >= Alphabet) $ do
+    let wrong = Set.fromList (wrongCharacters k)
+    let right = Set.fromList (knownCharacters k)
+    let iffy  = Set.fromList (misplacedCharacters k)
+    liftIO . Rainbow.putChunksLn $ T.unpack alphabet <&> \c ->
+      let letter = Rainbow.chunk (T.singleton c) in
+      case (Set.member c wrong, Set.member c right, Set.member c iffy) of
+        (True, _, _) -> "_"
+        (_, True, _) -> fore green letter
+        (_, _, True) -> fore yellow letter
+        _            -> letter
+
+randomWordle :: Vector Wordle -> RIO a Wordle
+randomWordle dict = (dict !) <$> randomRIO (0, length dict - 1)
 
 alphabet :: Text
 alphabet = T.pack ['a' .. 'z']
