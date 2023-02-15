@@ -22,7 +22,10 @@ data Wordle = Guess
   , chr3 :: {-# UNPACK #-} !Char
   , chr4 :: {-# UNPACK #-} !Char
   }
-  deriving (Show, Eq, Ord, Generic, NFData)
+  deriving (Eq, Ord, Generic, NFData)
+
+instance Show Wordle where
+  show (Guess a b c d e) = "Guess " <> [a, b, c, d, e]
 
 instance Hashable Wordle
 

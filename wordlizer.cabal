@@ -78,13 +78,15 @@ test-suite wordlizer-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Instances
       UtilSpec
       Paths_wordlizer
   hs-source-dirs:
       test
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      SHA
+      QuickCheck
+    , SHA
     , aeson
     , base >=4.11 && <10
     , binary

@@ -67,6 +67,7 @@ tests:
     dependencies:
     - wordlizer
     - hspec
+    - QuickCheck
 
     ghc-options:
     - -threaded

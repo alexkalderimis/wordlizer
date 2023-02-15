@@ -7,8 +7,14 @@ import RIO
 import Types
 import Util
 
-import qualified Data.Foldable as F
+import Instances
+
 import Test.Hspec
+import Test.QuickCheck (forAll, suchThat)
+import Test.QuickCheck.Arbitrary (applyArbitrary3)
+import Test.Hspec.QuickCheck (prop)
+
+import qualified Data.Foldable as F
 import qualified RIO.Text as T
 import qualified RIO.Set as Set
 import qualified RIO.List as L
@@ -110,18 +116,62 @@ spec = do
                              }
 
   describe "matchesKnowledge" $ do
-    specify "usage is a suitable solution to [ad]AGE" $ do
+
+    let rightOrRejected k a b = a == b || not (matchesKnowledge k b)
+
+    prop "a learned word is either right or rejected" $ \a b ->
+      let k = learn (Answer a) b in rightOrRejected k a b
+
+    prop "a learned word is either right or rejected, known words" $ \(KnownWord a) (KnownWord b) ->
+      let k = learn (Answer a) b in rightOrRejected k a b
+
+    prop "a correct guess is accepted" $ \a ->
+      let k = learn (Answer a) a in matchesKnowledge k a
+
+    prop "a correct guess is accepted, known words" $ \(KnownWord a) ->
+      let k = learn (Answer a) a in matchesKnowledge k a
+
+    prop "a word rejected by some knowledge is rejected by more knowledge" $ \a b c ->
+      let k0 = learn (Answer a) b
+          k1 = learn (Answer a) c
+          k = k0 <> k1
+       in rightOrRejected k a b && rightOrRejected k a c
+
+    prop "a word rejected by some knowledge is rejected by more knowledge, known words" $
+      \(KnownWord a) (KnownWord b) (KnownWord c) ->
+      let k0 = learn (Answer a) b
+          k1 = learn (Answer a) c
+          k = k0 <> k1
+       in rightOrRejected k a b && rightOrRejected k a c
+
+    let cIsAPossibleSolutionForAGivenB a b c = let k = learn (Answer a) b in matchesKnowledge k c
+
+    prop "if a word is accepted, then learning from it will make knowledge more specific"
+      $ forAll (applyArbitrary3 (,,) `suchThat` \(KnownWord a, KnownWord b, KnownWord c) -> a /= c && cIsAPossibleSolutionForAGivenB a b c)
+      $ \(KnownWord a, KnownWord b, KnownWord c) ->
+      let k = learn (Answer a) b
+          k' = learn (Answer a) c
+          ws = V.fromList knownWords
+
+       in V.length (query k ws) > V.length (query (k <> k') ws)
+
+    specify "usage is a possible solution to [ad]AGE" $ do
       k <- clue "[ad]AGE"
       a <- wordle "usage"
       a `shouldSatisfy` matchesKnowledge k
 
-    specify "xxxxd is not a suitable solution to [vends]" $ do
+    specify "xxage is a possible solution to [ad]AGE" $ do
+      k <- clue "[ad]AGE"
+      a <- wordle "xxage"
+      a `shouldSatisfy` matchesKnowledge k
+
+    specify "xxxxd is not a possible solution to [vends]" $ do
       k <- clue "[vends]"
       a <- wordle "xxxxd"
 
       a `shouldSatisfy` (not . matchesKnowledge k)
 
-    specify "xxxxx is a suitable solution to [vends]" $ do
+    specify "xxxxx is a possible solution to [vends]" $ do
       k <- clue "[vends]"
       a <- wordle "xxxxx"
 
