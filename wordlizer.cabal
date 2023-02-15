@@ -29,8 +29,10 @@ library
       src
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints
   build-depends:
-      aeson
+      SHA
+    , aeson
     , base >=4.11 && <10
+    , binary
     , bytestring
     , directory
     , filepath
@@ -52,8 +54,10 @@ executable wordlizer
       app
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      aeson
+      SHA
+    , aeson
     , base >=4.11 && <10
+    , binary
     , bytestring
     , directory
     , filepath
@@ -80,8 +84,10 @@ test-suite wordlizer-test
       test
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      aeson
+      SHA
+    , aeson
     , base >=4.11 && <10
+    , binary
     , bytestring
     , directory
     , filepath

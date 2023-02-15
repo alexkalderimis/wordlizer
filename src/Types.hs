@@ -82,6 +82,36 @@ c4 k = Map.lookup 4 (known k)
 noKnowledge :: Knowledge
 noKnowledge = Knowledge mempty mempty mempty
 
+data Hint = Correct | Wrong | Misplaced | Unknown
+  deriving (Show, Eq, Generic)
+
+newtype HintAlphabet = HintAlphabet { getAlphabet :: [Hint] }
+  deriving (Eq, Generic)
+
+instance Show HintAlphabet where
+  show (HintAlphabet hints) = zip alphabet hints >>= \(c, h) ->
+                              case h of Correct -> ['{', c, '}']
+                                        Misplaced -> ['(', c, ')']
+                                        Wrong -> "_"
+                                        Unknown -> [c]
+
+withHints :: HintAlphabet -> [(Char, Hint)]
+withHints = zip alphabet . getAlphabet
+
+toHintAlphabet :: Knowledge -> HintAlphabet
+toHintAlphabet k = HintAlphabet (fmap go alphabet)
+  where wrong = Set.fromList (wrongCharacters k)
+        right = Set.fromList (knownCharacters k)
+        iffy  = Set.fromList (misplacedCharacters k)
+        go c = case (Set.member c wrong, Set.member c right, Set.member c iffy) of
+                 (True, _, _) -> Wrong
+                 (_, True, _) -> Correct
+                 (_, _, True) -> Misplaced
+                 _            -> Unknown
+
+alphabet :: [Char]
+alphabet = ['a' .. 'z']
+
 data Hints = NoHints | Alphabet | Suggestions
   deriving (Show, Eq, Ord)
 

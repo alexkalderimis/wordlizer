@@ -7,6 +7,8 @@ module Run (solve, appraise, play) where
 import Import
 import FileCache (getCachedJSONQuery)
 
+import qualified Data.Binary as Binary
+import qualified Data.Digest.Pure.SHA as SHA
 import System.Random (randomRIO)
 import Text.Printf (printf)
 import qualified Data.Text.IO as IO
@@ -48,6 +50,9 @@ maxRounds = 6
 
 maxSuggestLimit :: Int
 maxSuggestLimit = 800
+
+cacheIfMoreCandidatesThan :: Int
+cacheIfMoreCandidatesThan = 100
 
 play :: Hints -> Bool -> Maybe Answer -> Maybe Wordle -> CLI ()
 play hints auto manswer firstGuess = do
@@ -99,22 +104,17 @@ hint hints k wl = do
     suggest k wl
 
   when (hints >= Alphabet) $ do
-    let wrong = Set.fromList (wrongCharacters k)
-    let right = Set.fromList (knownCharacters k)
-    let iffy  = Set.fromList (misplacedCharacters k)
-    liftIO . Rainbow.putChunksLn $ T.unpack alphabet <&> \c ->
+    let hintAlpha = toHintAlphabet k
+    liftIO . Rainbow.putChunksLn $ withHints hintAlpha <&> \(c, h) ->
       let letter = Rainbow.chunk (T.singleton c) in
-      case (Set.member c wrong, Set.member c right, Set.member c iffy) of
-        (True, _, _) -> "_"
-        (_, True, _) -> fore green letter
-        (_, _, True) -> fore yellow letter
-        _            -> letter
+      case h of
+        Wrong     -> "_"
+        Correct   -> fore green letter
+        Misplaced -> fore yellow letter
+        _         -> letter
 
 randomWordle :: Vector Wordle -> RIO a Wordle
 randomWordle dict = (dict !) <$> randomRIO (0, length dict - 1)
-
-alphabet :: Text
-alphabet = T.pack ['a' .. 'z']
 
 candidates :: Knowledge -> CLI (Vector Wordle)
 candidates g = do
@@ -141,12 +141,18 @@ suggestGuess :: Knowledge -> Vector Wordle -> RIO App (Maybe Wordle)
 suggestGuess k ws = (L.headMaybe . snd =<<) <$> suggestions k ws
 
 suggestions :: Knowledge -> Vector Wordle -> CLI (Maybe (Double, [Wordle]))
-suggestions k ws = do
-  suggestCache <- asks appSuggestCache
-  let h = hash (k, V.toList ws)
-  let filename = suggestCache </> "best" </> printf "%010d.json" h 
+suggestions k ws =
+  if V.length ws < cacheIfMoreCandidatesThan
+     then pure compute
+     else do
+          suggestCache <- asks appSuggestCache
+          let alpha = toHintAlphabet k
+              h = hash (k, V.toList ws)
+              filename = suggestCache </> "best" </> printf "%s-%s.json" (show alpha) (SHA.showDigest $ SHA.sha1 $ Binary.encode h)
 
-  liftIO . getCachedJSONQuery filename cacheExiry $ pure (bestNextGuesses k ws)
+          liftIO . getCachedJSONQuery filename cacheExiry $ pure compute
+  where
+    compute = bestNextGuesses k ws
 
 prompt :: CLI Text
 prompt = liftIO (IO.hPutStr stdout "> " >> hFlush stdout >> IO.getLine)
