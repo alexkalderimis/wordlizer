@@ -63,7 +63,7 @@ play hints auto manswer firstGuess = do
           (_, True) -> do puts (displayGuess k' w)
                           let possible' = query k' possible
                           playRound k' possible' n'
-          _         -> puts "Invalid word!" >> playRound k possible n
+          _         -> puts (unwordle w <> "is not in the dictionary!") >> unless auto (playRound k possible n)
 
       nextGuess k wl = if auto
                      then suggestGuess k wl
@@ -80,7 +80,8 @@ play hints auto manswer firstGuess = do
           mw <- nextGuess k wl
 
           case mw of
-            Nothing -> puts "Invalid word!" >> playRound k wl n
+            Nothing -> do puts "Invalid word!"
+                          unless auto (playRound k wl n)
             Just wrdl -> respondTo k wl n wrdl
 
   playRound mempty (wordListWith (getAnswer target) wordList) 0

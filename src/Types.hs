@@ -67,7 +67,7 @@ knownCharacters :: Knowledge -> [Char]
 knownCharacters = L.nub . Map.elems . known
 
 wrongCharacters :: Knowledge -> [Char]
-wrongCharacters k = L.nub [c | (_, c) <- Set.toList (excluded k)] L.\\ Map.keys (somewhere k)
+wrongCharacters k = L.nub [c | (_, c) <- toList (excluded k)] L.\\ Map.keys (somewhere k)
 
 misplacedCharacters :: Knowledge -> [Char]
 misplacedCharacters = Map.keys . somewhere
@@ -103,12 +103,15 @@ defaultOptions = Options
 
 data App = App
   { appWordList :: !(Vector Wordle)
-  , appFullDict :: !(Set Wordle)
+  , appDict :: !(Set Wordle)
   , appLogFunc :: !LogFunc
   , appProcessContext :: !ProcessContext
   , appOptions :: !Options
   , appSuggestCache :: !FilePath
   }
+
+appFullDict :: App -> Set Wordle
+appFullDict a = Set.union (Set.fromList $ toList $ appWordList a) (appDict a)
 
 instance HasLogFunc App where
   logFuncL = lens appLogFunc (\x y -> x { appLogFunc = y })

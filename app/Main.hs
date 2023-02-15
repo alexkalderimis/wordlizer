@@ -49,7 +49,7 @@ main = do
           , appProcessContext = pc
           , appOptions = options
           , appWordList = wordList
-          , appFullDict = Set.fromList . V.toList $ fullDict
+          , appDict = Set.fromList . V.toList $ fullDict
           , appSuggestCache = suggestCache
           }
      in runRIO app cmd
