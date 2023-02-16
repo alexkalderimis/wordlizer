@@ -28,22 +28,29 @@ type CLI = RIO App
 solve :: Knowledge -> CLI ()
 solve g = do
   possible <- candidates g
-  maxCandidates <- asks (optionsMaxCandidates . appOptions)
+
   case length possible of
     0 -> puts "No possible solution"
     1 -> puts ("The answer is: " <> unwordle (possible ! 0))
-    n | n >= maxCandidates -> do puts (tshow (length possible) <> " candidates:")
-                                 puts "too many candidates to show! (use --max-candidates to allow showing more)"
-                                 suggest g possible
-    _ -> do mapM_ (puts . unwordle) possible
-            suggest g possible
+    _ -> showCandidates possible >> suggest g possible
 
 appraise :: Wordle -> Knowledge -> CLI ()
 appraise w k = do
   possible <- candidates k
-  verbosely (puts (tshow (length possible) <> " candidates"))
+  showCandidates possible
   suggest k possible
   liftIO (printf "Average specificity of %s: %.1f\n" (unwordle w) (specificity k possible w))
+
+showCandidates :: Vector Wordle -> CLI ()
+showCandidates possible = do
+  let n = length possible
+  maxCandidates <- asks (optionsMaxCandidates . appOptions)
+
+  verbosely $ puts (tshow n <> " candidates")
+
+  if n >= maxCandidates
+     then puts "too many candidates to show! (use --max-candidates to allow showing more)"
+     else mapM_ (puts . unwordle) possible
 
 maxRounds :: Int
 maxRounds = 6
