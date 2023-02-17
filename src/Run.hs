@@ -58,6 +58,9 @@ maxRounds = 6
 maxSuggestLimit :: Int
 maxSuggestLimit = 800
 
+maxCandidateShowLimit :: Int
+maxCandidateShowLimit = 12
+
 cacheIfMoreCandidatesThan :: Int
 cacheIfMoreCandidatesThan = 100
 
@@ -72,7 +75,7 @@ play hints auto manswer firstGuess = do
             n' = n + 1
         in case (Answer w == target, Set.member w dict) of
           (True, _) -> puts (displayGuess k' w) >> puts ("You won in " <> tshow n' <> "!")
-          (_, True) -> do puts (displayGuess k' w)
+          (_, True) -> do puts ("GUESS " <> tshow n' <> ": " <> displayGuess k' w)
                           let possible' = query k' possible
                           playRound k' possible' n'
           _         -> puts (unwordle w <> "is not in the dictionary!") >> unless auto (playRound k possible n)
@@ -106,8 +109,10 @@ wordListWith w = V.fromList . Set.toList . Set.insert w . Set.fromList . V.toLis
 
 hint :: Hints -> Knowledge -> Vector Wordle -> CLI ()
 hint hints k wl = do
+  let n = V.length wl
   when (hints >= Suggestions) $ do
-    puts (tshow (V.length wl) <> " candidates")
+    puts (tshow n <> " candidates")
+    when (1 < n && n <= maxCandidateShowLimit) (printWordleList wl)
     suggest k wl
 
   when (hints >= Alphabet) $ do
@@ -142,7 +147,10 @@ suggest k possible = when (length possible < maxSuggestLimit) $ do
 
   forM_ guesses $ \(n, best) -> do
     puts $ "Suggested guesses: (" <> tshow n <> " on average)"
-    mapM_ (puts . (" - " <>) . unwordle) best
+    printWordleList best
+
+printWordleList :: Foldable f => f Wordle -> CLI ()
+printWordleList = mapM_ (puts . (" - " <>) . unwordle)
 
 suggestGuess :: Knowledge -> Vector Wordle -> RIO App (Maybe Wordle)
 suggestGuess k ws = (L.headMaybe . snd =<<) <$> suggestions k ws
