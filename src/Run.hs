@@ -5,25 +5,24 @@
 module Run (solve, appraise, play) where
 
 import Import
-import FileCache (getCachedJSONQuery)
+import Suggest
+import CLI
 
-import qualified Data.Binary as Binary
-import qualified Data.Digest.Pure.SHA as SHA
 import System.Random (randomRIO)
 import Text.Printf (printf)
-import qualified Data.Text.IO as IO
 import qualified RIO.Text as T
 import qualified RIO.Vector as V
 import qualified RIO.Set as Set
-import qualified RIO.List as L
-import Data.Hashable (hash)
-import Data.Time.Clock (NominalDiffTime)
-import RIO.FilePath ((</>))
 import           RIO.Vector.Partial ((!))
 import qualified Rainbow
 import           Rainbow (fore, green, yellow)
 
-type CLI = RIO App
+
+maxRounds :: Int
+maxRounds = 6
+
+maxCandidateShowLimit :: Int
+maxCandidateShowLimit = 12
 
 solve :: Knowledge -> CLI ()
 solve g = do
@@ -40,29 +39,6 @@ appraise w k = do
   showCandidates possible
   suggest k possible
   liftIO (printf "Average specificity of %s: %.1f\n" (unwordle w) (specificity k possible w))
-
-showCandidates :: Vector Wordle -> CLI ()
-showCandidates possible = do
-  let n = length possible
-  maxCandidates <- asks (optionsMaxCandidates . appOptions)
-
-  verbosely $ puts (tshow n <> " candidates")
-
-  if n >= maxCandidates
-     then puts "too many candidates to show! (use --max-candidates to allow showing more)"
-     else mapM_ (puts . unwordle) possible
-
-maxRounds :: Int
-maxRounds = 6
-
-maxSuggestLimit :: Int
-maxSuggestLimit = 800
-
-maxCandidateShowLimit :: Int
-maxCandidateShowLimit = 12
-
-cacheIfMoreCandidatesThan :: Int
-cacheIfMoreCandidatesThan = 100
 
 play :: Hints -> Bool -> Maybe Answer -> Maybe Wordle -> CLI ()
 play hints auto manswer firstGuess = do
@@ -101,9 +77,6 @@ play hints auto manswer firstGuess = do
 
   playRound mempty (wordListWith (getAnswer target) wordList) 0
 
-cacheExiry :: NominalDiffTime
-cacheExiry = 24 * 60 * 60
-
 wordListWith :: Wordle -> Vector Wordle -> Vector Wordle
 wordListWith w = V.fromList . Set.toList . Set.insert w . Set.fromList . V.toList
 
@@ -127,47 +100,3 @@ hint hints k wl = do
 
 randomWordle :: Vector Wordle -> RIO a Wordle
 randomWordle dict = (dict !) <$> randomRIO (0, length dict - 1)
-
-candidates :: Knowledge -> CLI (Vector Wordle)
-candidates g = do
-  verbosely (asks appOptions >>= puts . tshow)
-  asks (query g . appWordList)
-
-puts :: Text -> CLI ()
-puts = liftIO . IO.putStrLn
-
-verbosely :: CLI () -> CLI ()
-verbosely act = do
-  v <- asks (optionsVerbose . appOptions)
-  when v act
-
-suggest :: Knowledge -> Vector Wordle -> CLI ()
-suggest k possible = when (length possible < maxSuggestLimit) $ do
-  guesses <- suggestions k possible
-
-  forM_ guesses $ \(n, best) -> do
-    puts $ "Suggested guesses: (" <> tshow n <> " on average)"
-    printWordleList best
-
-printWordleList :: Foldable f => f Wordle -> CLI ()
-printWordleList = mapM_ (puts . (" - " <>) . unwordle)
-
-suggestGuess :: Knowledge -> Vector Wordle -> RIO App (Maybe Wordle)
-suggestGuess k ws = (L.headMaybe . snd =<<) <$> suggestions k ws
-
-suggestions :: Knowledge -> Vector Wordle -> CLI (Maybe (Double, [Wordle]))
-suggestions k ws =
-  if V.length ws < cacheIfMoreCandidatesThan
-     then pure compute
-     else do
-          suggestCache <- asks appSuggestCache
-          let alpha = toHintAlphabet k
-              h = hash (k, V.toList ws)
-              filename = suggestCache </> "best" </> printf "%s-%s.json" (show alpha) (SHA.showDigest $ SHA.sha1 $ Binary.encode h)
-
-          liftIO . getCachedJSONQuery filename cacheExiry $ pure compute
-  where
-    compute = bestNextGuesses k ws
-
-prompt :: CLI Text
-prompt = liftIO (IO.hPutStr stdout "> " >> hFlush stdout >> IO.getLine)

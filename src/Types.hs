@@ -134,6 +134,8 @@ defaultOptions = Options
   , optionsMaxCandidates = 40
   }
 
+type CLI = RIO App
+
 data App = App
   { appWordList :: !(Vector Wordle)
   , appDict :: !(Set Wordle)
