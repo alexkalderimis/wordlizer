@@ -74,6 +74,12 @@ parseGuess s = case mkWordle (T.pack s) of
                  Nothing -> Left "not a wordle"
                  Just w -> pure w
 
+parseVerbosity :: Parser Verbosity
+parseVerbosity =   flag' Quiet (long "quiet" <> short 'q' <> help "Show minimal noise")
+               <|> flag' Noisy (long "verbose" <> help "Show more noise")
+               <|> flag' Debug (long "debug" <> help "Show debug information")
+               <|> pure Quiet
+
 clues :: Parser Knowledge
 clues = fmap mconcat
       . many
@@ -85,7 +91,7 @@ parseOptions :: Parser Options
 parseOptions = Options
    <$> wordsFile "words" wordListFile
    <*> wordsFile "dictionary" fullDictFile
-   <*> switch (long "verbose")
+   <*> parseVerbosity
    <*> option auto (long "max-candidates"
              <> metavar "INT"
              <> help "Maximum number of candidates to show"

@@ -118,19 +118,25 @@ alphabet = ['a' .. 'z']
 data Hints = NoHints | Alphabet | Suggestions
   deriving (Show, Eq, Ord)
 
+data Verbosity = Quiet | Noisy | Debug
+  deriving (Show, Eq, Ord)
+
 -- | Command line arguments
 data Options = Options
   { wordListFile :: !FilePath
   , fullDictFile :: !FilePath
-  , optionsVerbose :: !Bool
+  , optionsVerbosity :: !Verbosity
   , optionsMaxCandidates :: !Int
   } deriving Show
+
+optionsVerbose :: Options -> Bool
+optionsVerbose = (>= Noisy) . optionsVerbosity
 
 defaultOptions :: Options
 defaultOptions = Options
   { wordListFile = "/usr/share/dict/words"
   , fullDictFile = "/usr/share/dict/words"
-  , optionsVerbose = False
+  , optionsVerbosity = Quiet
   , optionsMaxCandidates = 40
   }
 

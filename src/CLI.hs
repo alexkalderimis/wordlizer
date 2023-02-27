@@ -10,10 +10,15 @@ import qualified Data.Text.IO as IO
 puts :: Text -> CLI ()
 puts = liftIO . IO.putStrLn
 
-verbosely :: CLI () -> CLI ()
-verbosely act = do
+info :: Text -> CLI ()
+info msg = do
   v <- asks (optionsVerbose . appOptions)
-  when v act
+  when v (puts msg)
+
+debug :: Text -> CLI ()
+debug msg = do
+  v <- asks ((>= Debug) . optionsVerbosity . appOptions)
+  when v (puts msg)
 
 prompt :: CLI Text
 prompt = liftIO (IO.hPutStr stdout "> " >> hFlush stdout >> IO.getLine)
@@ -23,7 +28,7 @@ printWordleList = mapM_ (puts . (" - " <>) . unwordle)
 
 candidates :: Knowledge -> CLI (Vector Wordle)
 candidates g = do
-  verbosely (asks appOptions >>= puts . tshow)
+  asks appOptions >>= info . tshow
   asks (query g . appWordList)
 
 showCandidates :: Vector Wordle -> CLI ()
@@ -31,7 +36,7 @@ showCandidates possible = do
   let n = length possible
   maxCandidates <- asks (optionsMaxCandidates . appOptions)
 
-  verbosely $ puts (tshow n <> " candidates")
+  info $ tshow n <> " candidates"
 
   if n >= maxCandidates
      then puts "too many candidates to show! (use --max-candidates to allow showing more)"

@@ -51,7 +51,7 @@ play hints auto manswer firstGuess = do
             n' = n + 1
         in case (Answer w == target, Set.member w dict) of
           (True, _) -> puts (displayGuess k' w) >> puts ("You won in " <> tshow n' <> "!")
-          (_, True) -> do puts ("GUESS " <> tshow n' <> ": " <> displayGuess k' w)
+          (_, True) -> do puts (tshow n' <> ": " <> displayGuess k' w)
                           let possible' = query k' possible
                           playRound k' possible' n'
           _         -> puts (unwordle w <> "is not in the dictionary!") >> unless auto (playRound k possible n)
@@ -66,6 +66,7 @@ play hints auto manswer firstGuess = do
         0 | auto -> randomWordle wl >>= respondTo k wl 0
         _ | n >= maxRounds -> puts ("You lost! The answer was: " <> unwordle (getAnswer target))
         _ -> do
+          debug (tshow k)
           hint hints k wl
 
           mw <- nextGuess k wl
