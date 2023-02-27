@@ -36,6 +36,46 @@ spec = do
                       Just w -> pure w
                       Nothing -> fail ("Not a wordle: " <> show text)
 
+  describe "displayGuess" $ do
+    it "shows known, incorrect and misplaced letters" $ do
+      let k = Knowledge { known = Map.fromList [(0,'t'),(1,'h'),(2,'i'),(3,'e')]
+                        , somewhere = Map.fromList [('e',1),('h',1),('i',1),('t',1)]
+                        , excluded = Set.fromList [(0,'g'),(0,'n'),(0,'r'),(1,'g'),(1,'i'),(1,'n'),(1,'r'),(2,'g'),(2,'n'),(2,'r'),(3,'g'),(3,'n'),(3,'r'),(4,'e'),(4,'g'),(4,'n'),(4,'r')]
+                        }
+      w <- wordle "thine"
+
+      displayGuess k w `shouldBe` "THI[n]e"
+
+    it "knows the difference between misplaced and correct" $ do
+      let k = Knowledge { known = Map.fromList [(3, 'x')]
+                        , somewhere = Map.fromList [('x', 2)]
+                        , excluded = mempty
+                        }
+
+      w <- wordle "axaxa"
+
+      displayGuess k w `shouldBe` "[a]x[a]X[a]"
+
+    it "marks all misplaced letters" $ do
+      let k = Knowledge { known = Map.fromList [(2, 'x')]
+                        , somewhere = Map.fromList [('x', 3)]
+                        , excluded = mempty
+                        }
+
+      w <- wordle "axxxa"
+
+      displayGuess k w `shouldBe` "[a]xXx[a]"
+
+    it "knows the difference between misplaced and wrong" $ do
+      let k = Knowledge { known = Map.fromList [(3, 'x')]
+                        , somewhere = Map.fromList [('x', 2)]
+                        , excluded = mempty
+                        }
+
+      w <- wordle "axxxa"
+
+      displayGuess k w `shouldBe` "[a]x[x]X[a]"
+
   describe "parseClue" $ do
     it "parses [wrong]" $ do
       "[wrong]" `parsesAs` Knowledge { known = Map.fromList []

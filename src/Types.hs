@@ -85,6 +85,9 @@ c4 k = Map.lookup 4 (known k)
 noKnowledge :: Knowledge
 noKnowledge = Knowledge mempty mempty mempty
 
+isCorrect :: Knowledge -> Int -> Char -> Bool
+isCorrect k i c = Map.lookup i (known k) == Just c
+
 data Hint = Correct | Wrong | Misplaced | Unknown
   deriving (Show, Eq, Generic)
 

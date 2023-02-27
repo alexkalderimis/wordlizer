@@ -19,6 +19,7 @@ import qualified RIO.Text as T
 import qualified RIO.Text.Partial as T (replace)
 import qualified RIO.Set as Set
 import qualified RIO.Map as Map
+import qualified RIO.State as State
 import qualified RIO.List as L
 import qualified RIO.Vector as V
 import Data.Char
@@ -69,25 +70,28 @@ counts :: Wordle -> Map Char Int
 counts w = Map.fromListWith (+) $ zip (characters w) (L.repeat 1)
 
 displayGuess :: Knowledge -> Wordle -> Text
-displayGuess k w = T.replace "][" "" . fst $ foldl' go (mempty, misplaced) chars
+displayGuess knowledge w =
+  T.replace "][" "" . mconcat $ State.evalState (sequence steps) misplaced
   where
-    misplaced = foldl' (flip (Map.adjust (subtract 1)))
-                       (somewhere k)
-                       (Map.elems (known k))
+    chars = zip [0..] (characters w)
+    correctLetters = Set.fromList $ filter (uncurry (isCorrect knowledge)) chars
+    misplaced = foldl' (flip remove)
+                       (somewhere knowledge)
+                       (fmap snd $ Set.elems correctLetters)
 
-    chars = [(c0, chr0)
-            ,(c1, chr1)
-            ,(c2, chr2)
-            ,(c3, chr3)
-            ,(c4, chr4)
-            ]
+    steps = fmap step chars
 
-    go (str, misp) (kf, wf) = case (kf k, wf w) of
-      (Just c, c') | c == c' -> (str <> T.toUpper (T.singleton c), misp)
-      (_, c') -> let remaining = fromMaybe 0 (Map.lookup c' misp)
-                  in if remaining > 0
-                        then (str <> T.singleton c', Map.adjust (subtract 1) c' misp)
-                        else (str <> "[" <> T.singleton c' <> "]", misp)
+    remove = Map.adjust (subtract 1)
+
+    step :: (Int, Char) -> State.State (Map Char Int) Text
+    step (i, c) | Set.member (i, c) correctLetters = pure $ T.singleton (toUpper c)
+    step (_, c) = do
+      n <- State.gets (Map.findWithDefault 0 c)
+      State.modify' (remove c)
+
+      pure $ if n > 0
+         then T.singleton c
+         else "[" <> T.singleton c <> "]"
 
 drawConclusions :: Knowledge -> Knowledge
 drawConclusions = cleanUp . infer
