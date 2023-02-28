@@ -8,6 +8,7 @@ import Data.Char
 
 import RIO
 import qualified RIO.List as L
+import qualified RIO.List.Partial as L (head)
 import qualified RIO.Text as T
 import qualified RIO.Set as Set
 import qualified RIO.Map as Map
@@ -51,7 +52,8 @@ characters (Guess a b c d e) = [a, b, c, d, e]
 
 data Knowledge = Knowledge
   { known :: !(Map Int Char)
-  , somewhere :: !(Map Char Int)
+  , somewhere :: !(Map Char Int) -- at least N
+  , noMoreThan :: !(Map Char Int) -- at most N
   , excluded :: !(Set (Int, Char))
   } deriving (Eq, Show, Ord, Generic)
 
@@ -61,10 +63,20 @@ instance Semigroup Knowledge where
   a <> b = Knowledge { known = Map.union (known a) (known b)
                      , excluded = Set.union (excluded a) (excluded b)
                      , somewhere = Map.unionWith max (somewhere a) (somewhere b)
+                     , noMoreThan = Map.unionWith min (noMoreThan a) (noMoreThan b)
                      }
 
 instance Monoid Knowledge where
   mempty = noKnowledge
+
+atLeast :: Knowledge -> Char -> Int
+atLeast k c = Map.findWithDefault 0 c (somewhere k)
+
+atMost :: Knowledge -> Char -> Int
+atMost k c = max 0 $ Map.findWithDefault (5 - length (filter (/= c) . Map.elems $ known k)) c (noMoreThan k) 
+
+never :: Knowledge -> Char -> Bool
+never k c = atMost k c == 0
 
 knownCharacters :: Knowledge -> [Char]
 knownCharacters = L.nub . Map.elems . known
@@ -75,6 +87,14 @@ wrongCharacters k = L.nub [c | (_, c) <- toList (excluded k)] L.\\ Map.keys (som
 misplacedCharacters :: Knowledge -> [Char]
 misplacedCharacters = Map.keys . somewhere
 
+fullyCorrect :: Knowledge -> [Char]
+fullyCorrect k = fmap L.head
+               . filter (\g -> Just (length g) == Map.lookup (L.head g) (noMoreThan k))
+               . L.group
+               . L.sort
+               . Map.elems
+               $ known k
+
 c0, c1, c2, c3, c4 :: Knowledge -> Maybe Char
 c0 k = Map.lookup 0 (known k)
 c1 k = Map.lookup 1 (known k)
@@ -83,7 +103,7 @@ c3 k = Map.lookup 3 (known k)
 c4 k = Map.lookup 4 (known k)
 
 noKnowledge :: Knowledge
-noKnowledge = Knowledge mempty mempty mempty
+noKnowledge = Knowledge mempty mempty mempty mempty
 
 isCorrect :: Knowledge -> Int -> Char -> Bool
 isCorrect k i c = Map.lookup i (known k) == Just c

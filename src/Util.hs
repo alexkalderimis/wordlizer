@@ -1,6 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Util
   ( query
@@ -11,6 +12,7 @@ module Util
   , learn
   , displayGuess
   , matchesKnowledge
+  , cardinalityOk
   ) where
 
 import RIO
@@ -52,12 +54,16 @@ specificity priorK ws word = Foldl.fold average (fmap (realToFrac . candidatesGi
     average = (/) <$> Foldl.sum <*> Foldl.genericLength
 
 learn :: Answer -> Wordle -> Knowledge
-learn (Answer target) guess = drawConclusions $ Knowledge 
+learn (Answer target) guess = drawConclusions $ noKnowledge
   { known = correct
   , excluded = incorrect
-  , somewhere = Map.filter (> 0) $ Map.intersectionWith min (counts target) (counts guess)
+  , somewhere = misplaced
+  , noMoreThan = Map.fromList [(c, Map.findWithDefault 0 c misplaced) | (c, n) <- Map.toList cg, n > Map.findWithDefault 0 c ct]
   }
   where
+    ct = counts target
+    cg = counts guess
+    misplaced = Map.filter (> 0) $ Map.intersectionWith min ct cg
     (correct, incorrect) = foldl' (\(right, wrong) (i, f) ->
                                     let c = f guess
                                     in if f target == c
@@ -77,7 +83,7 @@ displayGuess knowledge w =
     correctLetters = Set.fromList $ filter (uncurry (isCorrect knowledge)) chars
     misplaced = foldl' (flip remove)
                        (somewhere knowledge)
-                       (fmap snd $ Set.elems correctLetters)
+                       (snd <$> Set.elems correctLetters)
 
     steps = fmap step chars
 
@@ -94,28 +100,33 @@ displayGuess knowledge w =
          else "[" <> T.singleton c <> "]"
 
 drawConclusions :: Knowledge -> Knowledge
-drawConclusions = cleanUp . infer
+drawConclusions = cleanUp . infer . fixNoMoreThan
   where
-    -- if we know a position, remove any exclusions
+    fixNoMoreThan k = k { noMoreThan = foldl' (\m (c,n) -> Map.adjust (max n) c m) (noMoreThan k) (Map.toList $ somewhere k) } 
+
+    -- if we know all the positions, we can exclude everywhere else
+    -- excludeKnown k = let newExclusions = Set.fromList [(i, c) | i <- [0..4], c <- fullyCorrect k, not (isCorrect k i c)]
+    --                 in k { excluded = Set.union (excluded k) newExclusions }
+
+    -- if we know a position, remove any incorrect exclusions
     cleanUp k = k { excluded = Set.difference (excluded k) (Set.fromList $ Map.toList (known k)) }
 
-    -- infer that any exclusion not named as a somewhere must be excluded everywhere
+    -- infer that any exclusion not named as a somewhere must be `never`
     infer k = let nowhere = (L.nub . fmap snd . Set.toList $ excluded k) L.\\ Map.keys (somewhere k)
-              in k { excluded = Set.union (excluded k) (Set.fromList [(i, c) | i <- [0..4], c <- nowhere]) }
+              in k { noMoreThan = foldl' (\m c -> Map.insertWith max c 0 m) (noMoreThan k) nowhere }
 
 parseClue :: String -> Either String Knowledge
 parseClue = fmap (drawConclusions . foldl' (\k f -> f k) noKnowledge) . extract 0
   where
 
-    wrong i c k = k { excluded = foldl' (\m i' -> Set.insert (i', c) m) (excluded k) [i..4] }
+    wrong i c k = k { noMoreThan = Map.insert c 0 (noMoreThan k) -- fixed in drawConclusions
+                    , excluded = Set.insert (i, c) (excluded k)
+                    }
 
-    correct i c k = k { known = Map.insert i c (known k)
-                      , somewhere = Map.unionWith (+) (somewhere k) (Map.singleton c 1)
-                      }
+    correct i c k = addOne c $ k { known = Map.insert i c (known k) }
+    misplaced i c k = addOne c $ k { excluded = Set.insert (i, c) (excluded k) }
 
-    misplaced i c k = k { somewhere = Map.unionWith (+) (somewhere k) (Map.singleton c 1)
-                        , excluded = Set.insert (i, c) (excluded k)
-                        }
+    addOne c k = k { somewhere = Map.unionWith (+) (somewhere k) (Map.singleton c 1) }
 
     extract :: Int -> String -> Either String [Knowledge -> Knowledge]
     extract 5 [] = pure [id]
@@ -137,7 +148,7 @@ parseClue = fmap (drawConclusions . foldl' (\k f -> f k) noKnowledge) . extract 
           m = n + length nots
       in case rst' of
         _ | m > 5 -> Left "Too many bad characters."
-        (']':s) -> do let bad = wrong n <$> nots
+        (']':s) -> do let bad = uncurry wrong <$> zip [n..] nots
                       g <- extract (n + length nots) s
                       pure (g <> bad)
         _ -> Left "Expected ]"
@@ -146,16 +157,28 @@ parseClue = fmap (drawConclusions . foldl' (\k f -> f k) noKnowledge) . extract 
 
 matchesKnowledge :: Knowledge -> Wordle -> Bool
 matchesKnowledge k (Guess a b c d e)
-  =  maybe (allowedIn 0 a) (== a) (c0 k)
+  =  not (any (never k) chars)
+  && maybe (allowedIn 0 a) (== a) (c0 k)
   && maybe (allowedIn 1 b) (== b) (c1 k)
   && maybe (allowedIn 2 c) (== c) (c2 k)
   && maybe (allowedIn 3 d) (== d) (c3 k)
   && maybe (allowedIn 4 e) (== e) (c4 k)
-  && and [hasEnough character n | (character, n) <- Map.toList (somewhere k)]
+  && all (cardinalityOk k chars) (chars <> Map.keys (somewhere k))
   where 
     allowedIn i character = not $ Set.member (i, character) (excluded k)
-    hasEnough character n = atLeast n $ filter (== character) [a, b, c, d, e]
-    atLeast n xs = case xs of _ | n < 1 -> True
+    chars = [a, b, c, d, e]
+
+cardinalityOk :: Knowledge -> [Char] -> Char -> Bool
+cardinalityOk k chars character = hasEnough (atLeast k character)
+                                && underLimit (atMost k character)
+  where
+    hasEnough n = lenAtLeast n $ filter (== character) chars
+    underLimit n = lenAtMost n $ filter (== character) chars
+
+-- short-circuiting length comparisions, where possible
+lenAtMost, lenAtLeast :: Int -> [a] -> Bool
+lenAtMost n xs = length xs <= n
+
+lenAtLeast !n xs = case xs of _ | n < 1 -> True
                               []        -> False
-                              (_ : tl)  -> atLeast (n - 1) tl
-    
+                              (_ : tl)  -> lenAtLeast (n - 1) tl

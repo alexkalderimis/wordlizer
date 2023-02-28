@@ -38,7 +38,7 @@ spec = do
 
   describe "displayGuess" $ do
     it "shows known, incorrect and misplaced letters" $ do
-      let k = Knowledge { known = Map.fromList [(0,'t'),(1,'h'),(2,'i'),(3,'e')]
+      let k = noKnowledge { known = Map.fromList [(0,'t'),(1,'h'),(2,'i'),(3,'e')]
                         , somewhere = Map.fromList [('e',1),('h',1),('i',1),('t',1)]
                         , excluded = Set.fromList [(0,'g'),(0,'n'),(0,'r'),(1,'g'),(1,'i'),(1,'n'),(1,'r'),(2,'g'),(2,'n'),(2,'r'),(3,'g'),(3,'n'),(3,'r'),(4,'e'),(4,'g'),(4,'n'),(4,'r')]
                         }
@@ -47,7 +47,7 @@ spec = do
       displayGuess k w `shouldBe` "THI[n]e"
 
     it "knows the difference between misplaced and correct" $ do
-      let k = Knowledge { known = Map.fromList [(3, 'x')]
+      let k = noKnowledge { known = Map.fromList [(3, 'x')]
                         , somewhere = Map.fromList [('x', 2)]
                         , excluded = mempty
                         }
@@ -57,7 +57,7 @@ spec = do
       displayGuess k w `shouldBe` "[a]x[a]X[a]"
 
     it "marks all misplaced letters" $ do
-      let k = Knowledge { known = Map.fromList [(2, 'x')]
+      let k = noKnowledge { known = Map.fromList [(2, 'x')]
                         , somewhere = Map.fromList [('x', 3)]
                         , excluded = mempty
                         }
@@ -67,7 +67,7 @@ spec = do
       displayGuess k w `shouldBe` "[a]xXx[a]"
 
     it "knows the difference between misplaced and wrong" $ do
-      let k = Knowledge { known = Map.fromList [(3, 'x')]
+      let k = noKnowledge { known = Map.fromList [(3, 'x')]
                         , somewhere = Map.fromList [('x', 2)]
                         , excluded = mempty
                         }
@@ -76,51 +76,63 @@ spec = do
 
       displayGuess k w `shouldBe` "[a]x[x]X[a]"
 
+    prop "parsing a displayed guess does not add any knowledge" $ \(KnownWord a) (KnownWord w) -> do
+      let k = learn (Answer a) w
+      k' <- clue (T.unpack $ displayGuess k w)
+
+      mappend k k' `shouldBe` k
+
   describe "parseClue" $ do
+    it "parses eA[ter]" $ do
+      "eA[ter]" `parsesAs` noKnowledge
+        { known = Map.fromList [(1, 'a')]
+        , somewhere = Map.fromList [('a', 1), ('e', 1)]
+        , noMoreThan = Map.fromList [('t', 0), ('e', 1), ('r', 0)]
+        , excluded = Set.fromList [(0, 'e'), (2, 't'), (3, 'e'), (4, 'r')]
+        }
+
+    it "parses [o]t[t]e[r]" $ do
+      "[o]t[t]e[r]" `parsesAs` noKnowledge { known = Map.fromList []
+                                       , somewhere = Map.fromList [('t', 1), ('e', 1)]
+                                       , noMoreThan = Map.fromList [('t', 1), ('o', 0), ('r', 0)]
+                                       , excluded = Set.fromList (zip [0..] "otter")
+                                     }
     it "parses [wrong]" $ do
-      "[wrong]" `parsesAs` Knowledge { known = Map.fromList []
-                                     , somewhere = Map.fromList []
-                                     , excluded = Set.fromList [ (0,'g'),(0,'n'),(0,'o'),(0,'r'),(0,'w')
-                                                               , (1,'g'),(1,'n'),(1,'o'),(1,'r'),(1,'w')
-                                                               , (2,'g'),(2,'n'),(2,'o'),(2,'r'),(2,'w')
-                                                               , (3,'g'),(3,'n'),(3,'o'),(3,'r'),(3,'w')
-                                                               , (4,'g'),(4,'n'),(4,'o'),(4,'r'),(4,'w')
-                                                               ]
+      "[wrong]" `parsesAs` noKnowledge { known = Map.fromList []
+                                       , somewhere = Map.fromList []
+                                       , noMoreThan = Map.fromList [(c, 0) | c <- "wrong"]
+                                       , excluded = Set.fromList (zip [0..] "wrong")
                                      }
 
     it "parses [wron]k" $ do
-      "[wron]k" `parsesAs` Knowledge { known = Map.fromList []
+      "[wron]k" `parsesAs` noKnowledge { known = Map.fromList []
                                      , somewhere = Map.fromList [('k',1)]
-                                     , excluded = Set.fromList [(0,'n'),(0,'o'),(0,'r'),(0,'w')
-                                                               ,(1,'n'),(1,'o'),(1,'r'),(1,'w')
-                                                               ,(2,'n'),(2,'o'),(2,'r'),(2,'w')
-                                                               ,(3,'n'),(3,'o'),(3,'r'),(3,'w')
-                                                               ,(4,'k'),(4,'n'),(4,'o'),(4,'r'),(4,'w')
-                                                               ]
+                                     , noMoreThan = Map.fromList [(c, 0) | c <- "wron"]
+                                     , excluded = Set.fromList (zip [0..] "wronk")
                                      }
 
     it "parses RIGHT" $ do
-      "RIGHT" `parsesAs` Knowledge { known = Map.fromList (zip [0..] "right")
+      "RIGHT" `parsesAs` noKnowledge { known = Map.fromList (zip [0..] "right")
                                    , somewhere = Map.fromList (zip "right" (L.repeat 1))
                                    , excluded = mempty
                                    }
 
     it "parses aCTor" $ do
-      "aCTor" `parsesAs` Knowledge { known = Map.fromList [(1,'c'),(2,'t')]
+      "aCTor" `parsesAs` noKnowledge { known = Map.fromList [(1,'c'),(2,'t')]
                                    , somewhere = Map.fromList [('a',1),('o',1),('r',1),('c', 1), ('t', 1)]
                                    , excluded = Set.fromList [(0,'a'),(3,'o'),(4,'r')]
                                    }
 
     it "parses [p]An[i]c" $ do
-      "[p]An[i]c" `parsesAs` Knowledge { known = Map.fromList [(1,'a')]
-                                       , somewhere = Map.fromList [('c',1),('n',1),('a', 1)]
-                                       , excluded = Set.fromList [(0,'i'),(0,'p')
-                                                                 ,(1,'i'),(1,'p')
-                                                                 ,(2,'i'),(2,'n'),(2,'p')
-                                                                 ,(3,'i'),(3,'p')
-                                                                 ,(4,'c'),(4,'i'),(4,'p')
-                                                                 ]
-                                       }
+      "[p]An[i]c" `parsesAs` noKnowledge { known = Map.fromList [(1,'a')]
+                                         , noMoreThan = Map.fromList [('p', 0), ('i', 0)]
+                                         , somewhere = Map.fromList [('c',1),('n',1),('a', 1)]
+                                         , excluded = Set.fromList [(0,'p')
+                                                                   ,(2,'n')
+                                                                   ,(3,'i')
+                                                                   ,(4,'c')
+                                                                   ]
+                                         }
 
     it "rejects bug" $ do
       "bug" `failsWith` "Expected exactly 5 characters. Got: 3"
@@ -140,20 +152,22 @@ spec = do
       b <- wordle "vends"
       let k = learn a b
 
-      k `shouldBe` Knowledge { known = mempty
-                             , somewhere = Map.fromList [('e',1),('s',1)]
-                             , excluded = Set.fromList [(1,'e'),(4,'s')] <> Set.fromList [(i, c) | i <- [0..4], c <- "vnd"]
-                             }
+      k `shouldBe` noKnowledge { known = mempty
+                               , noMoreThan = Map.fromList [(c, 0) | c <- "dnv"]
+                               , somewhere = Map.fromList [('e',1),('s',1)]
+                               , excluded = Set.fromList (zip [0..] "vends")
+                               }
 
     it "learns correct information, without leaking it" $ do
       a <- wordle "ababa"
       w <- wordle "babab"
       let k = learn (Answer a) w
 
-      k `shouldBe` Knowledge { known = mempty
-                             , somewhere = Map.fromList [('a',2),('b',2)]
-                             , excluded = Set.fromList [(0,'b'),(1,'a'),(2,'b'),(3,'a'),(4,'b')]
-                             }
+      k `shouldBe` noKnowledge { known = mempty
+                               , noMoreThan = Map.singleton 'b' 2
+                               , somewhere = Map.fromList [('a',2),('b',2)]
+                               , excluded = Set.fromList [(0,'b'),(1,'a'),(2,'b'),(3,'a'),(4,'b')]
+                               }
 
   describe "matchesKnowledge" $ do
 
