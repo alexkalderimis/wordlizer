@@ -1,10 +1,11 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE OverloadedLists #-}
+
 module UtilSpec (spec) where
 
 import RIO
-import Types
+import Types hiding (clue)
 import Util
 
 import Instances
@@ -14,11 +15,9 @@ import Test.QuickCheck (forAll, suchThat)
 import Test.QuickCheck.Arbitrary (applyArbitrary3)
 import Test.Hspec.QuickCheck (prop)
 
+import Data.Monoid
 import qualified Data.Foldable as F
 import qualified RIO.Text as T
-import qualified RIO.Set as Set
-import qualified RIO.List as L
-import qualified RIO.Map as Map
 import qualified RIO.Vector as V
 
 db :: Vector Text
@@ -29,7 +28,7 @@ shouldMatch xs ys = F.toList xs `shouldMatchList` F.toList ys
 
 spec :: Spec
 spec = do
-  let parsesAs lhs rhs = parseClue lhs `shouldBe` Right rhs
+  let parsesAs lhs rhs = parseClue lhs `shouldBe` Right (drawConclusions rhs)
       failsWith lhs err = parseClue lhs `shouldBe` Left err
       clue = either fail pure . parseClue
       wordle text = case mkWordle text of
@@ -38,39 +37,36 @@ spec = do
 
   describe "displayGuess" $ do
     it "shows known, incorrect and misplaced letters" $ do
-      let k = noKnowledge { known = Map.fromList [(0,'t'),(1,'h'),(2,'i'),(3,'e')]
-                        , somewhere = Map.fromList [('e',1),('h',1),('i',1),('t',1)]
-                        , excluded = Set.fromList [(0,'g'),(0,'n'),(0,'r'),(1,'g'),(1,'i'),(1,'n'),(1,'r'),(2,'g'),(2,'n'),(2,'r'),(3,'g'),(3,'n'),(3,'r'),(4,'e'),(4,'g'),(4,'n'),(4,'r')]
-                        }
+      a <- wordle "thief"
       w <- wordle "thine"
+      let k = learn (Answer a) w
 
       displayGuess k w `shouldBe` "THI[n]e"
 
     it "knows the difference between misplaced and correct" $ do
-      let k = noKnowledge { known = Map.fromList [(3, 'x')]
-                        , somewhere = Map.fromList [('x', 2)]
-                        , excluded = mempty
-                        }
+      let k = markCorrect P3 'x'
+            . markMisplaced P1 'x'
+            $ noKnowledge
 
       w <- wordle "axaxa"
 
       displayGuess k w `shouldBe` "[a]x[a]X[a]"
 
     it "marks all misplaced letters" $ do
-      let k = noKnowledge { known = Map.fromList [(2, 'x')]
-                        , somewhere = Map.fromList [('x', 3)]
-                        , excluded = mempty
-                        }
+      let k = mempty
+            & markMisplaced P1 'x'
+            & markCorrect   P2 'x'
+            & markMisplaced P3 'x'
 
       w <- wordle "axxxa"
 
       displayGuess k w `shouldBe` "[a]xXx[a]"
 
     it "knows the difference between misplaced and wrong" $ do
-      let k = noKnowledge { known = Map.fromList [(3, 'x')]
-                        , somewhere = Map.fromList [('x', 2)]
-                        , excluded = mempty
-                        }
+      let k = mempty
+            & markMisplaced P1 'x'
+            & markWrong     P2 'x'
+            & markCorrect   P3 'x'
 
       w <- wordle "axxxa"
 
@@ -84,55 +80,73 @@ spec = do
 
   describe "parseClue" $ do
     it "parses eA[ter]" $ do
-      "eA[ter]" `parsesAs` noKnowledge
-        { known = Map.fromList [(1, 'a')]
-        , somewhere = Map.fromList [('a', 1), ('e', 1)]
-        , noMoreThan = Map.fromList [('t', 0), ('e', 1), ('r', 0)]
-        , excluded = Set.fromList [(0, 'e'), (2, 't'), (3, 'e'), (4, 'r')]
-        }
+      let k = mempty
+            & markMisplaced P0 'e'
+            & markCorrect P1 'a'
+            & markWrong P2 't'
+            & markWrong P3 'e'
+            & markWrong P4 'r'
+
+      "eA[ter]" `parsesAs` k
 
     it "parses [o]t[t]e[r]" $ do
-      "[o]t[t]e[r]" `parsesAs` noKnowledge { known = Map.fromList []
-                                       , somewhere = Map.fromList [('t', 1), ('e', 1)]
-                                       , noMoreThan = Map.fromList [('t', 1), ('o', 0), ('r', 0)]
-                                       , excluded = Set.fromList (zip [0..] "otter")
-                                     }
+      let k = mempty
+            & markWrong P0 'o'
+            & markMisplaced P1 't'
+            & markWrong P2 't'
+            & markMisplaced P3 'e'
+            & markWrong P4 'r'
+            
+      "[o]t[t]e[r]" `parsesAs` k
+
     it "parses [wrong]" $ do
-      "[wrong]" `parsesAs` noKnowledge { known = Map.fromList []
-                                       , somewhere = Map.fromList []
-                                       , noMoreThan = Map.fromList [(c, 0) | c <- "wrong"]
-                                       , excluded = Set.fromList (zip [0..] "wrong")
-                                     }
+      let k = mempty
+            & markWrong P0 'w'
+            & markWrong P1 'r'
+            & markWrong P2 'o'
+            & markWrong P3 'n'
+            & markWrong P4 'g'
+
+      "[wrong]" `parsesAs` k
 
     it "parses [wron]k" $ do
-      "[wron]k" `parsesAs` noKnowledge { known = Map.fromList []
-                                     , somewhere = Map.fromList [('k',1)]
-                                     , noMoreThan = Map.fromList [(c, 0) | c <- "wron"]
-                                     , excluded = Set.fromList (zip [0..] "wronk")
-                                     }
+      let k = mempty
+            & markWrong P0 'w'
+            & markWrong P1 'r'
+            & markWrong P2 'o'
+            & markWrong P3 'n'
+            & markMisplaced P4 'k'
+
+      "[wron]k" `parsesAs` k
 
     it "parses RIGHT" $ do
-      "RIGHT" `parsesAs` noKnowledge { known = Map.fromList (zip [0..] "right")
-                                   , somewhere = Map.fromList (zip "right" (L.repeat 1))
-                                   , excluded = mempty
-                                   }
+      let k = mempty
+            & markCorrect P0 'r'
+            & markCorrect P1 'i'
+            & markCorrect P2 'g'
+            & markCorrect P3 'h'
+            & markCorrect P4 't'
+      "RIGHT" `parsesAs` k
 
     it "parses aCTor" $ do
-      "aCTor" `parsesAs` noKnowledge { known = Map.fromList [(1,'c'),(2,'t')]
-                                   , somewhere = Map.fromList [('a',1),('o',1),('r',1),('c', 1), ('t', 1)]
-                                   , excluded = Set.fromList [(0,'a'),(3,'o'),(4,'r')]
-                                   }
+      let k = noKnowledge
+            & markMisplaced P0 'a'
+            & markCorrect   P1 'c'
+            & markCorrect   P2 't'
+            & markMisplaced P3 'o'
+            & markMisplaced P4 'r'
+
+      "aCTor" `parsesAs` k
 
     it "parses [p]An[i]c" $ do
-      "[p]An[i]c" `parsesAs` noKnowledge { known = Map.fromList [(1,'a')]
-                                         , noMoreThan = Map.fromList [('p', 0), ('i', 0)]
-                                         , somewhere = Map.fromList [('c',1),('n',1),('a', 1)]
-                                         , excluded = Set.fromList [(0,'p')
-                                                                   ,(2,'n')
-                                                                   ,(3,'i')
-                                                                   ,(4,'c')
-                                                                   ]
-                                         }
+      let k = noKnowledge
+            & markWrong P0 'p'
+            & markCorrect   P1 'a'
+            & markMisplaced   P2 'n'
+            & markWrong P3 'i'
+            & markMisplaced P4 'c'
+
+      "[p]An[i]c" `parsesAs` k
 
     it "rejects bug" $ do
       "bug" `failsWith` "Expected exactly 5 characters. Got: 3"
@@ -144,7 +158,23 @@ spec = do
       "wor?k" `failsWith` "Cannot parse: ?k"
 
     it "rejects [wibble]" $ do
-      "[wibble]" `failsWith` "Too many bad characters."
+      "[wibble]" `failsWith` "Too many bad characters"
+
+    it "rejects aa[bbb" $ do
+      "aa[bbb" `failsWith` "Expected ]"
+
+    it "rejects aa[bbbb" $ do
+      "aa[bbbb" `failsWith` "Too many bad characters"
+
+    it "accepts aa[bbb]" $ do
+      let k = noKnowledge
+            & markMisplaced P0 'a'
+            & markMisplaced P1 'a'
+            & markWrong   P2 'b'
+            & markWrong   P3 'b'
+            & markWrong   P4 'b'
+
+      "aa[bbb]" `parsesAs` k
 
   describe "learn" $ do
     it "knows that excluded letters are excluded everywhere" $ do
@@ -152,22 +182,56 @@ spec = do
       b <- wordle "vends"
       let k = learn a b
 
-      k `shouldBe` noKnowledge { known = mempty
-                               , noMoreThan = Map.fromList [(c, 0) | c <- "dnv"]
-                               , somewhere = Map.fromList [('e',1),('s',1)]
-                               , excluded = Set.fromList (zip [0..] "vends")
-                               }
+      let expected = noKnowledge
+                   & markWrong     P0 'v'
+                   & markMisplaced P1 'e'
+                   & markWrong     P2 'n'
+                   & markWrong     P3 'd'
+                   & markMisplaced P4 's'
+                   & drawConclusions
 
-    it "learns correct information, without leaking it" $ do
+      k `shouldBe` expected
+      'v' `shouldSatisfy` never k
+      'n' `shouldSatisfy` never k
+      'd' `shouldSatisfy` never k
+
+    it "learns correct information about limits" $ do
       a <- wordle "ababa"
       w <- wordle "babab"
       let k = learn (Answer a) w
 
-      k `shouldBe` noKnowledge { known = mempty
-                               , noMoreThan = Map.singleton 'b' 2
-                               , somewhere = Map.fromList [('a',2),('b',2)]
-                               , excluded = Set.fromList [(0,'b'),(1,'a'),(2,'b'),(3,'a'),(4,'b')]
-                               }
+      let expected = noKnowledge
+                   & markMisplaced P0 'b'
+                   & markMisplaced P1 'a'
+                   & markMisplaced P2 'b'
+                   & markMisplaced P3 'a'
+                   & markWrong     P4 'b'
+                   & drawConclusions
+
+      k `shouldBe` expected
+      atLeast k 'a' `shouldBe` 2
+      atMost k 'a' `shouldBe` 3
+      atLeast k 'b' `shouldBe` 2
+      atMost k 'b' `shouldBe` 2
+
+    it "learns correct information about limits, without leaks" $ do
+      a <- wordle "ababx"
+      w <- wordle "babab"
+      let k = learn (Answer a) w
+
+      let expected = noKnowledge
+                   & markMisplaced P0 'b'
+                   & markMisplaced P1 'a'
+                   & markMisplaced P2 'b'
+                   & markMisplaced P3 'a'
+                   & markWrong     P4 'b'
+                   & drawConclusions
+
+      k `shouldBe` expected
+      atLeast k 'a' `shouldBe` 2
+      atMost k 'a' `shouldBe` 3
+      atLeast k 'b' `shouldBe` 2
+      atMost k 'b' `shouldBe` 2
 
   describe "matchesKnowledge" $ do
 
@@ -190,6 +254,12 @@ spec = do
           k1 = learn (Answer a) c
           k = k0 <> k1
        in rightOrRejected k a b && rightOrRejected k a c
+
+    prop "a fully known word only matches itself" $
+      \(KnownWord a) (KnownWord b) ->
+        let k = mconcat (Endo . uncurry markCorrect <$> charsWithPositions a) `appEndo` mempty
+
+        in matchesKnowledge k b `shouldBe` (a == b)
 
     prop "a word rejected by some knowledge is rejected by more knowledge, known words" $
       \(KnownWord a) (KnownWord b) (KnownWord c) ->

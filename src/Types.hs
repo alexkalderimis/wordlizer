@@ -1,12 +1,36 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Types where
+module Types (
+  Knowledge,
+  Position(..),
+  Wordle,
+  Answer(..),
+  Hint(..), Hints(..), HintAlphabet(..), withHints,
+  Verbosity(..),
+  Options(..),
+  optionsVerbose,
+  defaultOptions,
+  CLI,
+  App(..),
+  Clue, clue, fromClues,
+  appFullDict,
+  mkWordle,
+  unwordle,
+  characters, charsWithPositions, characterAt,
+  noKnowledge,
+  atLeast, atMost, never, knownCharacters, wrongCharacters, misplacedCharacters,
+  isCorrect, isWrong, toHintAlphabet, requiredCharacters,
+  fullyCorrect, c0, c1, c2, c3, c4,
+  markCorrect, markMisplaced, markWrong, include, exclude, nextPosition, setLimits,
+  drawConclusions, addOneSomewhere
+  ) where
 
 import Data.Char
 
 import RIO
+import Prelude (Enum(..))
 import qualified RIO.List as L
 import qualified RIO.List.Partial as L (head)
 import qualified RIO.Text as T
@@ -15,20 +39,38 @@ import qualified RIO.Map as Map
 import RIO.Process
 import Data.Aeson (FromJSON(..), ToJSON(..))
 import qualified Data.Aeson as Aeson
+import qualified Data.Array.Unboxed as A
+import           Data.Array.Unboxed (UArray)
+import           Data.Ix
+import Data.Hashable (Hashable(hashWithSalt))
+import Data.Monoid
 
-data Wordle = Guess
-  { chr0 :: {-# UNPACK #-} !Char
-  , chr1 :: {-# UNPACK #-} !Char
-  , chr2 :: {-# UNPACK #-} !Char
-  , chr3 :: {-# UNPACK #-} !Char
-  , chr4 :: {-# UNPACK #-} !Char
-  }
-  deriving (Eq, Ord, Generic, NFData)
+data Position = P0 | P1 | P2 | P3 | P4
+  deriving (Show, Eq, Ord, Enum, Bounded, Generic)
+
+instance Ix Position where
+  range (a, b) = enumFromTo a b
+  inRange (a, b) x = a <= x && x <= b
+  index (a, b) x = if x == a then 0 else 1 + index (succ a, b) x
+
+instance Hashable Position
+instance NFData Position
+
+nextPosition :: Position -> Maybe Position
+nextPosition P4 = Nothing
+nextPosition p = pure (succ p)
+
+newtype Wordle = Guess { getGuess :: UArray Position Char }
+  deriving (Eq, Ord, Generic)
 
 instance Show Wordle where
-  show (Guess a b c d e) = "Guess " <> [a, b, c, d, e]
+  show = characters
 
-instance Hashable Wordle
+instance Hashable Wordle where
+  hashWithSalt salt = hashWithSalt salt . A.elems . getGuess
+
+instance NFData Wordle where
+  rnf (Guess arr) = rnf (A.assocs arr)
 
 newtype Answer = Answer { getAnswer :: Wordle }
   deriving (Eq)
@@ -42,25 +84,43 @@ instance ToJSON Wordle where
 mkWordle :: T.Text -> Maybe Wordle
 mkWordle t | T.length t /= 5 = Nothing
 mkWordle t | not (T.all isAsciiLower t) = Nothing
-mkWordle t = Just (Guess (T.index t 0) (T.index t 1) (T.index t 2) (T.index t 3) (T.index t 4))
+mkWordle t = Just . Guess . A.listArray (P0, P4) $ T.unpack t
 
 unwordle :: Wordle -> T.Text
 unwordle = T.pack . characters
 
 characters :: Wordle -> [Char]
-characters (Guess a b c d e) = [a, b, c, d, e]
+characters = A.elems . getGuess
+
+charsWithPositions :: Wordle -> [(Position, Char)]
+charsWithPositions = A.assocs . getGuess
+
+characterAt :: Position -> Wordle -> Char
+characterAt p (Guess g) = g A.! p
+
+isKnown :: Position -> Knowledge -> Bool
+isKnown p k = '?' /= characterAt p (known k)
+
+isCorrect :: Knowledge -> Position -> Char -> Bool
+isCorrect k p c = characterAt p (known k) == c
+
+isWrong :: Knowledge -> Position -> Char -> Bool
+isWrong k p c = (isKnown p k && not (isCorrect k p c)) || Set.member (p, c) (excluded k)
+
+requiredCharacters :: Knowledge -> Map Char Int
+requiredCharacters = somewhere
 
 data Knowledge = Knowledge
-  { known :: !(Map Int Char)
+  { known :: !Wordle
   , somewhere :: !(Map Char Int) -- at least N
   , noMoreThan :: !(Map Char Int) -- at most N
-  , excluded :: !(Set (Int, Char))
+  , excluded :: !(Set (Position, Char))
   } deriving (Eq, Show, Ord, Generic)
 
 instance Hashable Knowledge
 
 instance Semigroup Knowledge where
-  a <> b = Knowledge { known = Map.union (known a) (known b)
+  a <> b = Knowledge { known = Guess $ A.array (P0, P4) [(p, if isKnown p a then characterAt p (known a) else characterAt p (known b)) | p <- [P0 .. P4]]
                      , excluded = Set.union (excluded a) (excluded b)
                      , somewhere = Map.unionWith max (somewhere a) (somewhere b)
                      , noMoreThan = Map.unionWith min (noMoreThan a) (noMoreThan b)
@@ -69,17 +129,54 @@ instance Semigroup Knowledge where
 instance Monoid Knowledge where
   mempty = noKnowledge
 
+newtype Clue = Clue { getClue :: Endo Knowledge }
+  deriving (Semigroup, Monoid)
+
+clue :: (Knowledge -> Knowledge) -> Clue
+clue = Clue . Endo
+
+applyClue :: Clue -> Knowledge -> Knowledge
+applyClue = appEndo . getClue
+
+fromClues :: [Clue] -> Knowledge
+fromClues clues = drawConclusions $ applyClue (mconcat clues) mempty
+
+markCorrect :: Position -> Char -> Knowledge -> Knowledge
+markCorrect p c = addOneSomewhere c . include p c
+
+markMisplaced :: Position -> Char -> Knowledge -> Knowledge
+markMisplaced p c = addOneSomewhere c . exclude p c
+
+markWrong :: Position -> Char -> Knowledge -> Knowledge
+markWrong p c = exclude p c . setLimits c Nothing (Just 0)
+
+exclude :: Position -> Char -> Knowledge -> Knowledge
+exclude p c k = k { excluded = Set.insert (p, c) (excluded k) }
+
+include :: Position -> Char -> Knowledge -> Knowledge
+include p c k = k { known = Guess (getGuess (known k) A.// [(p, c)]) }
+
+addOneSomewhere :: Char -> Knowledge -> Knowledge
+addOneSomewhere c k = k { somewhere = Map.unionWith (+) (somewhere k) (Map.singleton c 1) }
+
+setLimits :: Char -> Maybe Int -> Maybe Int -> Knowledge -> Knowledge
+setLimits c lb ub k = k { somewhere = maybe id (Map.insertWith max c) lb (somewhere k)
+                        , noMoreThan = maybe id (Map.insertWith min c) ub (noMoreThan k)
+                        }
+
 atLeast :: Knowledge -> Char -> Int
 atLeast k c = Map.findWithDefault 0 c (somewhere k)
 
 atMost :: Knowledge -> Char -> Int
-atMost k c = max 0 $ Map.findWithDefault (5 - length (filter (/= c) . Map.elems $ known k)) c (noMoreThan k) 
+atMost k c = max 0 $ Map.findWithDefault defaultValue c (noMoreThan k) 
+  where
+    defaultValue = 5 - sum [n | (c', n) <- Map.toList (somewhere k), c /= c']
 
 never :: Knowledge -> Char -> Bool
 never k c = atMost k c == 0
 
 knownCharacters :: Knowledge -> [Char]
-knownCharacters = L.nub . Map.elems . known
+knownCharacters = filter (/= '?') . characters . known
 
 wrongCharacters :: Knowledge -> [Char]
 wrongCharacters k = L.nub [c | (_, c) <- toList (excluded k)] L.\\ Map.keys (somewhere k)
@@ -92,21 +189,33 @@ fullyCorrect k = fmap L.head
                . filter (\g -> Just (length g) == Map.lookup (L.head g) (noMoreThan k))
                . L.group
                . L.sort
-               . Map.elems
-               $ known k
+               $ knownCharacters k
 
 c0, c1, c2, c3, c4 :: Knowledge -> Maybe Char
-c0 k = Map.lookup 0 (known k)
-c1 k = Map.lookup 1 (known k)
-c2 k = Map.lookup 2 (known k)
-c3 k = Map.lookup 3 (known k)
-c4 k = Map.lookup 4 (known k)
+c0 k = makeKnown $ characterAt P0 (known k)
+c1 k = makeKnown $ characterAt P1 (known k)
+c2 k = makeKnown $ characterAt P2 (known k)
+c3 k = makeKnown $ characterAt P3 (known k)
+c4 k = makeKnown $ characterAt P4 (known k)
+
+makeKnown :: Char -> Maybe Char
+makeKnown '?' = Nothing
+makeKnown c = pure c
 
 noKnowledge :: Knowledge
-noKnowledge = Knowledge mempty mempty mempty mempty
+noKnowledge = Knowledge (Guess $ A.listArray (P0, P4) "?????") mempty mempty mempty
 
-isCorrect :: Knowledge -> Int -> Char -> Bool
-isCorrect k i c = Map.lookup i (known k) == Just c
+drawConclusions :: Knowledge -> Knowledge
+drawConclusions = cleanUp . infer . fixNoMoreThan
+  where
+    fixNoMoreThan k = k { noMoreThan = foldl' (\m (c,n) -> Map.adjust (max n) c m) (noMoreThan k) (Map.toList $ somewhere k) } 
+
+    -- if we know a position, remove any incorrect exclusions
+    cleanUp k = k { excluded = Set.difference (excluded k) (Set.fromList . A.assocs . getGuess $ known k) }
+
+    -- infer that any exclusion not named as a somewhere must be `never`
+    infer k = let nowhere = (L.nub . fmap snd . Set.toList $ excluded k) L.\\ Map.keys (somewhere k)
+              in k { noMoreThan = foldl' (\m c -> Map.insertWith max c 0 m) (noMoreThan k) nowhere }
 
 data Hint = Correct | Wrong | Misplaced | Unknown
   deriving (Show, Eq, Generic)

@@ -11,14 +11,13 @@ import Types
 import Test.QuickCheck.Arbitrary
 import Test.QuickCheck.Gen
 
+import Data.Maybe (fromJust)
+import qualified RIO.Text as T
+
 -- fully arbitrary
 instance Arbitrary Wordle where
   arbitrary = let char = chooseEnum ('a', 'z')
-               in Guess <$> char
-                        <*> char
-                        <*> char
-                        <*> char
-                        <*> char
+               in fromJust . mkWordle . T.pack <$> sequence [char, char, char, char, char]
 
 -- chosen from a word list - more likely to have overlaps and matches
 newtype KnownWord = KnownWord Wordle deriving (Show, Eq)

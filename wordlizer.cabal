@@ -33,6 +33,7 @@ library
   build-depends:
       SHA
     , aeson
+    , array
     , base >=4.11 && <10
     , binary
     , bytestring
@@ -58,6 +59,7 @@ executable wordlizer
   build-depends:
       SHA
     , aeson
+    , array
     , base >=4.11 && <10
     , binary
     , bytestring
@@ -90,6 +92,7 @@ test-suite wordlizer-test
       QuickCheck
     , SHA
     , aeson
+    , array
     , base >=4.11 && <10
     , binary
     , bytestring
