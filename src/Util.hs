@@ -126,7 +126,7 @@ parseClue = fmap fromClues . extract False (Just P0)
       p <- maybe (Left "Maximum 5 characters expected") pure pos
       case stream of
         [] -> Left ("Expected exactly 5 characters. Got: " <> show (Ix.rangeSize (P0, p) - 1))
-        (c:cs) -> do fact <- case (isAsciiLower c, isAsciiUpper c) of
+        (c:cs) -> do fact <- case (wordleChar c, wordleChar (toLower c)) of
                                (True, _) -> pure $ clue (markMisplaced p c)
                                (_, True) -> pure $ clue (markCorrect p $ toLower c)
                                _ -> Left ("Cannot parse: " <> stream)

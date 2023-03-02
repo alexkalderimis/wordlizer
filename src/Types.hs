@@ -16,8 +16,7 @@ module Types (
   App(..),
   Clue, clue, fromClues,
   appFullDict,
-  mkWordle,
-  unwordle,
+  mkWordle, unwordle, wordleChar,
   characters, charsWithPositions, characterAt,
   noKnowledge,
   atLeast, atMost, never, knownCharacters, wrongCharacters, misplacedCharacters,
@@ -83,8 +82,11 @@ instance ToJSON Wordle where
 
 mkWordle :: T.Text -> Maybe Wordle
 mkWordle t | T.length t /= 5 = Nothing
-mkWordle t | not (T.all isAsciiLower t) = Nothing
+mkWordle t | not (T.all wordleChar t) = Nothing
 mkWordle t = Just . Guess . A.listArray (P0, P4) $ T.unpack t
+
+wordleChar :: Char -> Bool
+wordleChar = inRange ('a', 'z')
 
 unwordle :: Wordle -> T.Text
 unwordle = T.pack . characters
