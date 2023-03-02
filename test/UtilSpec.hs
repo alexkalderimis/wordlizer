@@ -5,7 +5,7 @@
 module UtilSpec (spec) where
 
 import RIO
-import Types hiding (clue)
+import Types
 import Util
 
 import Instances
@@ -20,8 +20,8 @@ import qualified Data.Foldable as F
 import qualified RIO.Text as T
 import qualified RIO.Vector as V
 
-db :: Vector Text
-db = V.fromList ["weary", "eager", "panic", "saves", "waves", "woman", "clone"]
+db :: [Text]
+db = ["weary", "eager", "panic", "saves", "waves", "woman", "clone"]
 
 shouldMatch :: (Show a, Eq a, Foldable t1, Foldable t2) => t1 a -> t2 a -> Expectation
 shouldMatch xs ys = F.toList xs `shouldMatchList` F.toList ys
@@ -30,7 +30,7 @@ spec :: Spec
 spec = do
   let parsesAs lhs rhs = parseClue lhs `shouldBe` Right (drawConclusions rhs)
       failsWith lhs err = parseClue lhs `shouldBe` Left err
-      clue = either fail pure . parseClue
+      fromClue = either fail pure . parseClue
       wordle text = case mkWordle text of
                       Just w -> pure w
                       Nothing -> fail ("Not a wordle: " <> show text)
@@ -74,7 +74,7 @@ spec = do
 
     prop "parsing a displayed guess does not add any knowledge" $ \(KnownWord a) (KnownWord w) -> do
       let k = learn (Answer a) w
-      k' <- clue (T.unpack $ displayGuess k w)
+      k' <- fromClue (T.unpack $ displayGuess k w)
 
       mappend k k' `shouldBe` k
 
@@ -280,127 +280,84 @@ spec = do
        in V.length (query k ws) > V.length (query (k <> k') ws)
 
     specify "usage is a possible solution to [ad]AGE" $ do
-      k <- clue "[ad]AGE"
+      k <- fromClue "[ad]AGE"
       a <- wordle "usage"
       a `shouldSatisfy` matchesKnowledge k
 
     specify "xxage is a possible solution to [ad]AGE" $ do
-      k <- clue "[ad]AGE"
+      k <- fromClue "[ad]AGE"
       a <- wordle "xxage"
       a `shouldSatisfy` matchesKnowledge k
 
     specify "xxxxd is not a possible solution to [vends]" $ do
-      k <- clue "[vends]"
+      k <- fromClue "[vends]"
       a <- wordle "xxxxd"
 
       a `shouldSatisfy` (not . matchesKnowledge k)
 
     specify "xxxxx is a possible solution to [vends]" $ do
-      k <- clue "[vends]"
+      k <- fromClue "[vends]"
       a <- wordle "xxxxx"
 
       a `shouldSatisfy` matchesKnowledge k
 
     it "checks for somewheres, negative case" $ do
-      k <- clue "[ven]ds"
+      k <- fromClue "[ven]ds"
       a <- wordle "xxxxx"
 
       a `shouldSatisfy` (not . matchesKnowledge k)
 
     it "checks for somewheres, positive case" $ do
-      k <- clue "[ven]ds"
+      k <- fromClue "[ven]ds"
       a <- wordle "dsxxx"
 
       a `shouldSatisfy` matchesKnowledge k
 
   describe "wordles" $ do
     it "limits the word list to possible solutions" $ do
-      let wordList = T.unlines (F.toList db <> ["wooden", "won't", "", "William", "wave", "~~--~"])
+      let wordList = T.unlines (db <> ["wooden", "won't", "", "William", "wave", "~~--~"])
 
       fmap unwordle (wordles wordList) `shouldMatch` db
 
-  {--
-  describe "matchesClue" $ do
-    let check cs c w = matchesClue (makeClues cs) w c
-        shouldMatch word clue = word `shouldSatisfy` check [clue] clue
-
-    context "the candidate is adage" $ do
-      let candidate = "adage"
-
-      context "Correct" $ do
-        it "matches (Correct 2 a)" $ do
-          candidate `shouldMatch` Correct 2 'a'
-
-        it "matches (Correct 0 a)" $ do
-          candidate `shouldMatch` Correct 0 'a'
-
-        for_ [1, 3, 4] $ \i -> do
-          it ("does not match (Correct " <> show i <> "a)") $ do
-            candidate `shouldNotSatisfy` check [] (Correct i 'a')
-
-      context "Misplaced" $ do
-        for_ [0, 1, 2, 4] $ \i -> do
-          it ("matches (Misplaced " <> show i <> " g)") $ do
-            candidate `shouldMatch` Misplaced i 'g'
-
-        it "does not match (Misplaced 3 g)" $ do
-          candidate `shouldNotSatisfy` check [] (Misplaced 3 'g')
-
-        context "the clue is that a is misplaced" $ do
-          context "there are no other guesses for a" $ do
-            it "does not match (Misplaced 0 a)" $ do
-              candidate `shouldNotSatisfy` check [] (Misplaced 0 'a')
-          context "there is another guess for a" $ do
-
-
-      context "the clue is that a is wrong" $ do
-        let clue = Wrong 'a'
-
-        context "there are no other clues" $ do
-          it "does not match (Wrong a)" $ do
-            candidate `shouldNotSatisfy` check [clue] clue
-
-        context "there are other clues that mention a" $ do
-          let others = Correct 2 'a'
-          it "matches (Wrong a)" $ do
-            candidate `shouldSatisfy` check [clue, others] clue
-
   describe "query" $ do
-    let shouldFind g expected = query (makeClues g) db `shouldMatch` (expected :: [Text])
+    let dictionary = V.fromList (mapMaybe mkWordle db)
+    let shouldFind cs expected = do let k = fromClues (clue <$> cs)
+                                    let ws = mapMaybe mkWordle expected
+                                    length ws `shouldBe` length expected -- verify no mistakes
+                                    query k dictionary `shouldMatch` ws
 
     context "we know it starts with W" $ do
-      let guess = [Correct 0 'w']
+      let g = [markCorrect P0 'w']
 
       it "finds weary, woman" $ do
-        guess `shouldFind` ["weary", "waves", "woman"]
+        g `shouldFind` ["weary", "waves", "woman"]
 
     context "we know it starts with W and ends with N" $ do
-      let guess = [Correct 0 'w', Correct 4 'n']
+      let g = [markCorrect P0 'w', markCorrect P4 'n']
 
       it "finds woman" $ do
-        guess `shouldFind` ["woman"]
+        g `shouldFind` ["woman"]
 
     context "we know it contains an e, but not at the end" $ do
-      let guess = [Misplaced 4 'e']
+      let g = [markMisplaced P4 'e']
 
       it "finds weary, eager, saves, waves" $ do
-        guess `shouldFind` ["weary", "eager", "saves", "waves"]
+        g `shouldFind` ["weary", "eager", "saves", "waves"]
 
     context "we know it contains an e, not in penultimate position" $ do
-      let guess = [Misplaced 3 'e']
+      let guess = [markMisplaced P3 'e']
 
       it "finds weary, eager" $ do
         guess `shouldFind` ["weary", "clone"]
 
     context "we know it does not contain any of V G O" $ do
-      let guess = Wrong <$> ['v', 'g', 'o']
+      let guess = markWrong P0 <$> ['v', 'g', 'o']
 
       it "finds weary, panic" $ do
         guess `shouldFind` ["weary", "panic"]
 
     context "combinations of information" $ do
-      let g = [Correct 0 'w', Misplaced 4 'e', Wrong 'v']
+      let g = [markCorrect P0 'w', markMisplaced P4 'e', markWrong P0 'v']
 
       it "finds weary" $ do
         g `shouldFind` ["weary"]
-  --}
