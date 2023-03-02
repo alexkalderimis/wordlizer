@@ -21,7 +21,7 @@ module Types (
   noKnowledge,
   atLeast, atMost, never, knownCharacters, wrongCharacters, misplacedCharacters,
   isCorrect, isWrong, toHintAlphabet, requiredCharacters,
-  fullyCorrect, c0, c1, c2, c3, c4,
+  fullyCorrect,
   markCorrect, markMisplaced, markWrong, include, exclude, nextPosition, setLimits,
   drawConclusions, addOneSomewhere
   ) where
@@ -38,10 +38,7 @@ import qualified RIO.HashMap as HM
 import RIO.Process
 import Data.Aeson (FromJSON(..), ToJSON(..))
 import qualified Data.Aeson as Aeson
-import qualified Data.Array.Unboxed as A
-import           Data.Array.Unboxed (UArray)
 import           Data.Ix
-import Data.Hashable (Hashable(hashWithSalt))
 import Data.Monoid
 
 data Position = P0 | P1 | P2 | P3 | P4
@@ -59,17 +56,21 @@ nextPosition :: Position -> Maybe Position
 nextPosition P4 = Nothing
 nextPosition p = pure (succ p)
 
-newtype Wordle = Guess { getGuess :: UArray Position Char }
+data Wordle = Guess 
+  { g0 :: {-# UNPACK #-} !Char
+  , g1 :: {-# UNPACK #-} !Char
+  , g2 :: {-# UNPACK #-} !Char
+  , g3 :: {-# UNPACK #-} !Char
+  , g4 :: {-# UNPACK #-} !Char
+  }
   deriving (Eq, Ord, Generic)
 
 instance Show Wordle where
   show = characters
 
-instance Hashable Wordle where
-  hashWithSalt salt = hashWithSalt salt . A.elems . getGuess
+instance Hashable Wordle
 
-instance NFData Wordle where
-  rnf (Guess arr) = rnf (A.assocs arr)
+instance NFData Wordle
 
 newtype Answer = Answer { getAnswer :: Wordle }
   deriving (Eq)
@@ -81,9 +82,15 @@ instance ToJSON Wordle where
   toJSON = toJSON . unwordle
 
 mkWordle :: T.Text -> Maybe Wordle
-mkWordle t | T.length t /= 5 = Nothing
-mkWordle t | not (T.all wordleChar t) = Nothing
-mkWordle t = Just . Guess . A.listArray (P0, P4) $ T.unpack t
+mkWordle t = case T.unpack t of
+  [a, b, c, d, e] | T.all wordleChar t -> Just (Guess a b c d e)
+  _ -> Nothing
+
+mergeWordles :: Wordle -> Wordle -> Wordle
+mergeWordles (Guess a b c d e) (Guess a' b' c' d' e') = Guess (f a a') (f b b') (f c c') (f d d') (f e e')
+  where
+    f '?' x = x
+    f x _ = x
 
 wordleChar :: Char -> Bool
 wordleChar = inRange ('a', 'z')
@@ -92,13 +99,17 @@ unwordle :: Wordle -> T.Text
 unwordle = T.pack . characters
 
 characters :: Wordle -> [Char]
-characters = A.elems . getGuess
+characters (Guess a b c d e) = [a, b, c, d, e]
 
 charsWithPositions :: Wordle -> [(Position, Char)]
-charsWithPositions = A.assocs . getGuess
+charsWithPositions = zip [P0 ..] . characters
 
 characterAt :: Position -> Wordle -> Char
-characterAt p (Guess g) = g A.! p
+characterAt P0 = g0
+characterAt P1 = g1
+characterAt P2 = g2
+characterAt P3 = g3
+characterAt P4 = g4
 
 isKnown :: Position -> Knowledge -> Bool
 isKnown p k = '?' /= characterAt p (known k)
@@ -122,7 +133,7 @@ data Knowledge = Knowledge
 instance Hashable Knowledge
 
 instance Semigroup Knowledge where
-  a <> b = Knowledge { known = Guess $ A.array (P0, P4) [(p, if isKnown p a then characterAt p (known a) else characterAt p (known b)) | p <- [P0 .. P4]]
+  a <> b = Knowledge { known = mergeWordles (known a) (known b)
                      , excluded = Set.union (excluded a) (excluded b)
                      , somewhere = HM.unionWith max (somewhere a) (somewhere b)
                      , noMoreThan = HM.unionWith min (noMoreThan a) (noMoreThan b)
@@ -156,7 +167,14 @@ exclude :: Position -> Char -> Knowledge -> Knowledge
 exclude p c k = k { excluded = Set.insert (p, c) (excluded k) }
 
 include :: Position -> Char -> Knowledge -> Knowledge
-include p c k = k { known = Guess (getGuess (known k) A.// [(p, c)]) }
+include p c k = let correct = known k
+                    correct' = case p of
+                      P0 -> correct { g0 = c }
+                      P1 -> correct { g1 = c }
+                      P2 -> correct { g2 = c }
+                      P3 -> correct { g3 = c }
+                      P4 -> correct { g4 = c }
+                  in k { known = correct' }
 
 addOneSomewhere :: Char -> Knowledge -> Knowledge
 addOneSomewhere c k = k { somewhere = HM.unionWith (+) (somewhere k) (HM.singleton c 1) }
@@ -193,19 +211,8 @@ fullyCorrect k = fmap L.head
                . L.sort
                $ knownCharacters k
 
-c0, c1, c2, c3, c4 :: Knowledge -> Maybe Char
-c0 k = makeKnown $ characterAt P0 (known k)
-c1 k = makeKnown $ characterAt P1 (known k)
-c2 k = makeKnown $ characterAt P2 (known k)
-c3 k = makeKnown $ characterAt P3 (known k)
-c4 k = makeKnown $ characterAt P4 (known k)
-
-makeKnown :: Char -> Maybe Char
-makeKnown '?' = Nothing
-makeKnown c = pure c
-
 noKnowledge :: Knowledge
-noKnowledge = Knowledge (Guess $ A.listArray (P0, P4) "?????") mempty mempty mempty
+noKnowledge = Knowledge (Guess '?' '?' '?' '?' '?') mempty mempty mempty
 
 drawConclusions :: Knowledge -> Knowledge
 drawConclusions = cleanUp . infer . fixNoMoreThan
@@ -213,7 +220,7 @@ drawConclusions = cleanUp . infer . fixNoMoreThan
     fixNoMoreThan k = k { noMoreThan = foldl' (\m (c,n) -> HM.adjust (max n) c m) (noMoreThan k) (HM.toList $ somewhere k) } 
 
     -- if we know a position, remove any incorrect exclusions
-    cleanUp k = k { excluded = Set.difference (excluded k) (Set.fromList . A.assocs . getGuess $ known k) }
+    cleanUp k = k { excluded = Set.difference (excluded k) (Set.fromList . charsWithPositions $ known k) }
 
     -- infer that any exclusion not named as a somewhere must be `never`
     infer k = k { noMoreThan = foldl' (\m c -> HM.insertWith max c 0 m) (noMoreThan k) (wrongCharacters k) }
