@@ -19,7 +19,7 @@ import RIO
 import Types
 import qualified RIO.Text as T
 import qualified RIO.Text.Partial as T (replace)
-import qualified RIO.Map as Map
+import qualified RIO.HashMap as Map
 import qualified RIO.State as State
 import qualified RIO.List as L
 import qualified RIO.Vector as V
@@ -54,25 +54,6 @@ specificity priorK ws word = Foldl.fold average (fmap (realToFrac . candidatesGi
     candidatesGiven correct = let k = learn (Answer correct) word in length . filter (matchesKnowledge (priorK <> k)) $ V.toList ws
     average = (/) <$> Foldl.sum <*> Foldl.genericLength
 
--- learn :: Answer -> Wordle -> Knowledge
--- learn (Answer target) guess = drawConclusions $ noKnowledge
---   { known = correct
---   , excluded = incorrect
---   , somewhere = misplaced
---   , noMoreThan = Map.fromList [(c, Map.findWithDefault 0 c misplaced) | (c, n) <- Map.toList cg, n > Map.findWithDefault 0 c ct]
---   }
---   where
---     ct = counts target
---     cg = counts guess
---     misplaced = Map.intersectionWith min ct cg
---     (correct, incorrect) = foldl' (\(right, wrong) (i, f) ->
---                                     let c = f guess
---                                     in if f target == c
---                                        then (Map.insert i c right, wrong)
---                                        else (right, Set.insert (i, c) wrong))
---                                   (mempty, mempty)
---                                   (zip [P0 ..] [chr0, chr1, chr2, chr3, chr4])
-
 learn :: Answer -> Wordle -> Knowledge
 learn (Answer target) guess = (correctAndIncorrect <> bounds) `appEndo` noKnowledge
   where
@@ -83,12 +64,14 @@ learn (Answer target) guess = (correctAndIncorrect <> bounds) `appEndo` noKnowle
                            in foldMap go (L.zip3 [P0 ..] (characters target) (characters guess))
 
     lowerBounds = Map.intersectionWith min ct cg
-    upperBounds = Map.fromList [(c, Map.findWithDefault 0 c lowerBounds) | (c, n) <- Map.toList cg, n > Map.findWithDefault 0 c ct]
+    upperBounds = Map.fromList [(c, fromMaybe 0 (Map.lookup c lowerBounds)) | (c, n) <- Map.toList cg, n > targetCount c]
+
+    targetCount c = fromMaybe 0 (Map.lookup c ct)
 
     bounds = let go c = Endo (setLimits c (Map.lookup c lowerBounds) (Map.lookup c upperBounds))
               in foldMap go (characters guess)
 
-counts :: Wordle -> Map Char Int
+counts :: Wordle -> HashMap Char Int
 counts w = Map.fromListWith (+) $ zip (characters w) (L.repeat 1)
 
 displayGuess :: Knowledge -> Wordle -> Text
@@ -104,10 +87,10 @@ displayGuess knowledge w =
 
     removeOne = Map.adjust (subtract 1)
 
-    step :: (Position, Char) -> State.State (Map Char Int) Text
+    step :: (Position, Char) -> State.State (HashMap Char Int) Text
     step (p, c) | isCorrect knowledge p c = pure $ T.singleton (toUpper c)
     step (_, c) = do
-      n <- State.gets (Map.findWithDefault 0 c)
+      n <- State.gets (fromMaybe 0 . Map.lookup c)
       State.modify' (removeOne c)
 
       pure $ if n > 0

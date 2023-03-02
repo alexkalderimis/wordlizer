@@ -34,7 +34,7 @@ import qualified RIO.List as L
 import qualified RIO.List.Partial as L (head)
 import qualified RIO.Text as T
 import qualified RIO.Set as Set
-import qualified RIO.Map as Map
+import qualified RIO.HashMap as HM
 import RIO.Process
 import Data.Aeson (FromJSON(..), ToJSON(..))
 import qualified Data.Aeson as Aeson
@@ -109,13 +109,13 @@ isCorrect k p c = characterAt p (known k) == c
 isWrong :: Knowledge -> Position -> Char -> Bool
 isWrong k p c = (isKnown p k && not (isCorrect k p c)) || Set.member (p, c) (excluded k)
 
-requiredCharacters :: Knowledge -> Map Char Int
+requiredCharacters :: Knowledge -> HashMap Char Int
 requiredCharacters = somewhere
 
 data Knowledge = Knowledge
   { known :: !Wordle
-  , somewhere :: !(Map Char Int) -- at least N
-  , noMoreThan :: !(Map Char Int) -- at most N
+  , somewhere :: !(HashMap Char Int) -- at least N
+  , noMoreThan :: !(HashMap Char Int) -- at most N
   , excluded :: !(Set (Position, Char))
   } deriving (Eq, Show, Ord, Generic)
 
@@ -124,8 +124,8 @@ instance Hashable Knowledge
 instance Semigroup Knowledge where
   a <> b = Knowledge { known = Guess $ A.array (P0, P4) [(p, if isKnown p a then characterAt p (known a) else characterAt p (known b)) | p <- [P0 .. P4]]
                      , excluded = Set.union (excluded a) (excluded b)
-                     , somewhere = Map.unionWith max (somewhere a) (somewhere b)
-                     , noMoreThan = Map.unionWith min (noMoreThan a) (noMoreThan b)
+                     , somewhere = HM.unionWith max (somewhere a) (somewhere b)
+                     , noMoreThan = HM.unionWith min (noMoreThan a) (noMoreThan b)
                      }
 
 instance Monoid Knowledge where
@@ -159,20 +159,20 @@ include :: Position -> Char -> Knowledge -> Knowledge
 include p c k = k { known = Guess (getGuess (known k) A.// [(p, c)]) }
 
 addOneSomewhere :: Char -> Knowledge -> Knowledge
-addOneSomewhere c k = k { somewhere = Map.unionWith (+) (somewhere k) (Map.singleton c 1) }
+addOneSomewhere c k = k { somewhere = HM.unionWith (+) (somewhere k) (HM.singleton c 1) }
 
 setLimits :: Char -> Maybe Int -> Maybe Int -> Knowledge -> Knowledge
-setLimits c lb ub k = k { somewhere = maybe id (Map.insertWith max c) lb (somewhere k)
-                        , noMoreThan = maybe id (Map.insertWith min c) ub (noMoreThan k)
+setLimits c lb ub k = k { somewhere = maybe id (HM.insertWith max c) lb (somewhere k)
+                        , noMoreThan = maybe id (HM.insertWith min c) ub (noMoreThan k)
                         }
 
 atLeast :: Knowledge -> Char -> Int
-atLeast k c = Map.findWithDefault 0 c (somewhere k)
+atLeast k c = fromMaybe 0 $ HM.lookup c (somewhere k)
 
 atMost :: Knowledge -> Char -> Int
-atMost k c = max 0 $ Map.findWithDefault defaultValue c (noMoreThan k) 
+atMost k c = max 0 . fromMaybe defaultValue $ HM.lookup c (noMoreThan k) 
   where
-    defaultValue = 5 - sum [n | (c', n) <- Map.toList (somewhere k), c /= c']
+    defaultValue = 5 - sum [n | (c', n) <- HM.toList (somewhere k), c /= c']
 
 never :: Knowledge -> Char -> Bool
 never k c = atMost k c == 0
@@ -181,14 +181,14 @@ knownCharacters :: Knowledge -> [Char]
 knownCharacters = filter (/= '?') . characters . known
 
 wrongCharacters :: Knowledge -> [Char]
-wrongCharacters k = L.nub [c | (_, c) <- toList (excluded k)] L.\\ Map.keys (somewhere k)
+wrongCharacters k = L.nub [c | (_, c) <- toList (excluded k)] L.\\ HM.keys (somewhere k)
 
 misplacedCharacters :: Knowledge -> [Char]
-misplacedCharacters = Map.keys . somewhere
+misplacedCharacters = HM.keys . somewhere
 
 fullyCorrect :: Knowledge -> [Char]
 fullyCorrect k = fmap L.head
-               . filter (\g -> Just (length g) == Map.lookup (L.head g) (noMoreThan k))
+               . filter (\g -> Just (length g) == HM.lookup (L.head g) (noMoreThan k))
                . L.group
                . L.sort
                $ knownCharacters k
@@ -210,14 +210,13 @@ noKnowledge = Knowledge (Guess $ A.listArray (P0, P4) "?????") mempty mempty mem
 drawConclusions :: Knowledge -> Knowledge
 drawConclusions = cleanUp . infer . fixNoMoreThan
   where
-    fixNoMoreThan k = k { noMoreThan = foldl' (\m (c,n) -> Map.adjust (max n) c m) (noMoreThan k) (Map.toList $ somewhere k) } 
+    fixNoMoreThan k = k { noMoreThan = foldl' (\m (c,n) -> HM.adjust (max n) c m) (noMoreThan k) (HM.toList $ somewhere k) } 
 
     -- if we know a position, remove any incorrect exclusions
     cleanUp k = k { excluded = Set.difference (excluded k) (Set.fromList . A.assocs . getGuess $ known k) }
 
     -- infer that any exclusion not named as a somewhere must be `never`
-    infer k = let nowhere = (L.nub . fmap snd . Set.toList $ excluded k) L.\\ Map.keys (somewhere k)
-              in k { noMoreThan = foldl' (\m c -> Map.insertWith max c 0 m) (noMoreThan k) nowhere }
+    infer k = k { noMoreThan = foldl' (\m c -> HM.insertWith max c 0 m) (noMoreThan k) (wrongCharacters k) }
 
 data Hint = Correct | Wrong | Misplaced | Unknown
   deriving (Show, Eq, Generic)
