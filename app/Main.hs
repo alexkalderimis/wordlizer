@@ -33,8 +33,7 @@ main = do
                   id
                   (play <$> parseHints
                         <*> switch (long "auto"  <> help "Play suggested next moves")
-                        <*> optional (option (Answer <$> eitherReader parseGuess)
-                                             (long "answer" <> metavar "WORD" <> help "The answer"))
+                        <*> playMode
                         <*> optional guess)
 
   lo <- logOptionsHandle stderr (optionsVerbose options)
@@ -42,6 +41,7 @@ main = do
   wordList <- wordles <$> readFileUtf8 (wordListFile options)
   fullDict <- wordles <$> readFileUtf8 (fullDictFile options)
   suggestCache <- XDG.getUserCacheFile "wordlizer" "suggestions" >>= Directory.makeAbsolute
+  appHistory <- XDG.getUserCacheFile "wordlizer" "history" >>= Directory.makeAbsolute
 
   withLogFunc lo $ \lf ->
     let app = App
@@ -51,6 +51,7 @@ main = do
           , appWordList = wordList
           , appDict = Set.fromList . V.toList $ fullDict
           , appSuggestCache = suggestCache
+          , appHistory = appHistory
           }
      in runRIO app cmd
 
@@ -68,6 +69,13 @@ parseHints :: Parser Hints
 parseHints =   flag' Suggestions (long "hints" <> help "Show suggested next moves")
            <|> flag' NoHints     (long "no-hints" <> help "No help at all")
            <|> pure Alphabet
+
+playMode :: Parser PlayMode
+playMode = option (Given . Answer <$> eitherReader parseGuess)
+                  (long "answer" <> metavar "WORD" <> help "The answer")
+         <|> flag' Replay (long "replay" <> help "Use the answer from the last run")
+         <|> flag' Random (long "random" <> help "Choose an answer at random from the dictionary")
+         <|> pure Random
 
 parseGuess :: String -> Either String Wordle
 parseGuess s = case mkWordle (T.pack s) of

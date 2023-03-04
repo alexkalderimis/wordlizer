@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE BangPatterns #-}
 
-module Run (solve, appraise, play) where
+module Run (PlayMode(..), solve, appraise, play) where
 
 import Import
 import Suggest
@@ -10,7 +10,9 @@ import CLI
 
 import System.Random (randomRIO)
 import Text.Printf (printf)
+import qualified RIO.ByteString as BS
 import qualified RIO.Text as T
+import qualified RIO.List as L
 import qualified RIO.Vector as V
 import qualified RIO.Set as Set
 import           RIO.Vector.Partial ((!))
@@ -40,11 +42,34 @@ appraise w k = do
   suggest k possible
   liftIO (printf "Average specificity of %s: %.1f\n" (unwordle w) (specificity k possible w))
 
-play :: Hints -> Bool -> Maybe Answer -> Maybe Wordle -> CLI ()
-play hints auto manswer firstGuess = do
+data PlayMode = Replay | Random | Given Answer
+
+restoreLastAnswer :: CLI Answer
+restoreLastAnswer = do
+  histFile <- asks appHistory
+  bs <- BS.readFile histFile
+  txts <- either (error "Cannot restore last answer") pure (decodeUtf8' bs)
+  txt <- maybe (error "No saved anwer to restore") pure (L.lastMaybe $ filter (not . T.null) $ T.lines txts)
+  case mkWordle txt of
+    Nothing -> error ("Saved answer (" <> T.unpack txt <> " is not a wordle")
+    Just w -> pure (Answer w)
+
+storeLastAnswer :: Answer -> CLI ()
+storeLastAnswer (Answer a) = do
+  histFile <- asks appHistory
+  let line = encodeUtf8 (unwordle a <> "\n")
+  BS.appendFile histFile line
+
+play :: Hints -> Bool -> PlayMode -> Maybe Wordle -> CLI ()
+play hints auto mode firstGuess = do
   wordList <- asks appWordList
   dict <- asks appFullDict
-  target <- maybe (Answer <$> randomWordle wordList) pure manswer
+  target <- case mode of
+              Given a -> pure a
+              Random -> Answer <$> randomWordle wordList
+              Replay -> restoreLastAnswer
+
+  storeLastAnswer target
 
   let respondTo !k !possible !n !w =
         let k' = k <> learn target w

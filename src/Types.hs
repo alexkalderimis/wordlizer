@@ -289,6 +289,7 @@ data App = App
   , appProcessContext :: !ProcessContext
   , appOptions :: !Options
   , appSuggestCache :: !FilePath
+  , appHistory :: !FilePath
   }
 
 appFullDict :: App -> Set Wordle
