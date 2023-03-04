@@ -41,7 +41,7 @@ main = do
   wordList <- wordles <$> readFileUtf8 (wordListFile options)
   fullDict <- wordles <$> readFileUtf8 (fullDictFile options)
   suggestCache <- XDG.getUserCacheFile "wordlizer" "suggestions" >>= Directory.makeAbsolute
-  appHistory <- XDG.getUserCacheFile "wordlizer" "history" >>= Directory.makeAbsolute
+  histFile <- XDG.getUserCacheFile "wordlizer" "history" >>= Directory.makeAbsolute
 
   withLogFunc lo $ \lf ->
     let app = App
@@ -51,7 +51,7 @@ main = do
           , appWordList = wordList
           , appDict = Set.fromList . V.toList $ fullDict
           , appSuggestCache = suggestCache
-          , appHistory = appHistory
+          , appHistory = histFile
           }
      in runRIO app cmd
 
