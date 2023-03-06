@@ -22,6 +22,7 @@ library
       FileCache
       Import
       Run
+      Strings
       Suggest
       Types
       Util

@@ -39,5 +39,8 @@ showCandidates possible = do
   info $ tshow n <> " candidates"
 
   if n >= maxCandidates
-     then puts "too many candidates to show! (use --max-candidates to allow showing more)"
+     then puts maxCandidateMessage
      else mapM_ (puts . unwordle) possible
+
+maxCandidateMessage :: Text
+maxCandidateMessage = "too many candidates to show! (use --max-candidates to allow showing more)"

@@ -7,9 +7,9 @@ module Run (PlayMode(..), solve, appraise, play) where
 import Import
 import Suggest
 import CLI
+import qualified Strings as S
 
 import System.Random (randomRIO)
-import Text.Printf (printf)
 import qualified RIO.ByteString as BS
 import qualified RIO.Text as T
 import qualified RIO.List as L
@@ -31,8 +31,8 @@ solve g = do
   possible <- candidates g
 
   case length possible of
-    0 -> puts "No possible solution"
-    1 -> puts ("The answer is: " <> unwordle (possible ! 0))
+    0 -> puts S.noPossibleSolution
+    1 -> puts . S.theAnswerIs $ unwordle (possible ! 0)
     _ -> showCandidates possible >> suggest g possible
 
 appraise :: Wordle -> Knowledge -> CLI ()
@@ -40,7 +40,7 @@ appraise w k = do
   possible <- candidates k
   showCandidates possible
   suggest k possible
-  liftIO (printf "Average specificity of %s: %.1f\n" (unwordle w) (specificity k possible w))
+  puts (S.averageSpecficity w (specificity k possible w))
 
 data PlayMode = Replay | Random | Given Answer
 
@@ -75,21 +75,21 @@ play hints auto mode firstGuess = do
         let k' = k <> learn target w
             n' = n + 1
         in case (Answer w == target, Set.member w dict) of
-          (True, _) -> puts (displayGuess k' w) >> puts ("You won in " <> tshow n' <> "!")
-          (_, True) -> do puts (tshow n' <> ": " <> displayGuess k' w)
+          (True, _) -> puts (displayGuess k' w) >> puts (S.victory n')
+          (_, True) -> do puts (S.yourGuessWas n' (displayGuess k' w))
                           let possible' = query k' possible
                           playRound k' possible' n'
-          _         -> puts (unwordle w <> "is not in the dictionary!") >> unless auto (playRound k possible n)
+          _         -> puts (S.notInDict w) >> unless auto (playRound k possible n)
 
       nextGuess k wl = if auto
                      then suggestGuess k wl
                      else fmap mkWordle prompt
 
       playRound !k !wl !n = case n of
-        _ | V.null wl -> puts "This is awkward! Something went wrong (no possible answers)"
+        _ | V.null wl -> puts S.urk
         0 | Just guess <- firstGuess -> respondTo k wl 0 guess
         0 | auto -> randomWordle wl >>= respondTo k wl 0
-        _ | n >= maxRounds -> puts ("You lost! The answer was: " <> unwordle (getAnswer target))
+        _ | n >= maxRounds -> puts (S.defeat target)
         _ -> do
           debug (tshow k)
           hint hints k wl
@@ -97,7 +97,7 @@ play hints auto mode firstGuess = do
           mw <- nextGuess k wl
 
           case mw of
-            Nothing -> do puts "Invalid word!"
+            Nothing -> do puts S.invalidWord
                           unless auto (playRound k wl n)
             Just wrdl -> respondTo k wl n wrdl
 
@@ -110,7 +110,7 @@ hint :: Hints -> Knowledge -> Vector Wordle -> CLI ()
 hint hints k wl = do
   let n = V.length wl
   when (hints >= Suggestions) $ do
-    puts (tshow n <> " candidates")
+    puts (S.nCandidates n)
     when (1 < n && n <= maxCandidateShowLimit) (printWordleList wl)
     suggest k wl
 
